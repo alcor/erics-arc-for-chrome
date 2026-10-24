@@ -137,6 +137,24 @@ assert.deepEqual((await sw.evaluate(() => chrome.storage.local.get('order'))).or
   { pinned: [`${base}/x`, `${base}/b`], CoreCore: [`${base}/g2`] });
 console.log('saved order: ok');
 
+// Recent tabs: ⌃Tab goes to the last used tab, quick repeats walk further back, ⌃⇧Tab walks forward.
+const activate = id => sw.evaluate(id => chrome.tabs.update(id, { active: true }), id).then(() => sleep(50));
+const active = () => sw.evaluate(async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0].id);
+const r1 = await open('/r1'), r2 = await open('/r2'), r3 = await open('/r3');
+await activate(r1); await activate(r2); await activate(r3);
+await sw.evaluate(() => recent(1));
+assert.equal(await active(), r2);
+await sleep(1100);
+await sw.evaluate(() => recent(1));
+assert.equal(await active(), r3);
+console.log('ctrl+tab toggles last two: ok');
+await sleep(1100);
+await sw.evaluate(async () => { await recent(1); await recent(1); });
+assert.equal(await active(), r1);
+await sw.evaluate(() => recent(-1));
+assert.equal(await active(), r2);
+console.log('quick repeats walk back, ctrl+shift+tab walks forward: ok');
+
 await ctx.close();
 server.close();
 fs.rmSync(profile, { recursive: true, force: true });

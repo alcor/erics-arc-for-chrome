@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Eric's Arc for Chrome",
-  "version": "1.2",
+  "version": "1.3",
   "description": "Arc features for Chrome's built-in tab bar.",
-  "minimum_chrome_version": "102",
+  "minimum_chrome_version": "121",
   "permissions": ["tabs", "tabGroups", "storage"],
   "background": { "service_worker": "background.js" },
   "action": { "default_title": "Reset pinned tab" },
@@ -18,6 +18,14 @@
     },
     "repin-current": {
       "description": "Replace pinned URL with current"
+    },
+    "recent-next": {
+      "suggested_key": { "mac": "MacCtrl+Period", "default": "Ctrl+Period" },
+      "description": "Next recently used tab (Karabiner sends this for Ctrl+Tab)"
+    },
+    "recent-prev": {
+      "suggested_key": { "mac": "MacCtrl+Comma", "default": "Ctrl+Comma" },
+      "description": "Previous recently used tab (Karabiner sends this for Ctrl+Shift+Tab)"
     }
   }
 }

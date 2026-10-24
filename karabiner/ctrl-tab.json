@@ -1,0 +1,22 @@
+{
+  "title": "Eric's Arc for Chrome",
+  "rules": [
+    {
+      "description": "Chrome: Ctrl+Tab / Ctrl+Shift+Tab switch recent tabs (sends Ctrl+. / Ctrl+, to the extension)",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": { "key_code": "tab", "modifiers": { "mandatory": ["control", "shift"] } },
+          "to": [{ "key_code": "comma", "modifiers": ["control"] }],
+          "conditions": [{ "type": "frontmost_application_if", "bundle_identifiers": ["^com\\.google\\.Chrome$"] }]
+        },
+        {
+          "type": "basic",
+          "from": { "key_code": "tab", "modifiers": { "mandatory": ["control"] } },
+          "to": [{ "key_code": "period", "modifiers": ["control"] }],
+          "conditions": [{ "type": "frontmost_application_if", "bundle_identifiers": ["^com\\.google\\.Chrome$"] }]
+        }
+      ]
+    }
+  ]
+}

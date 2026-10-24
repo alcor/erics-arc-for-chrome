@@ -21,6 +21,16 @@ Pinned tabs, and tabs in the `CoreCore` tab group, remember the URL they had whe
 
 Locked URLs survive restarts by matching tabs in order, per pinned area and per group. If Chrome restores them in a different order, use "Replace pinned URL with current" or re-lock. Closing a whole window that has locked tabs, then quitting, can shift them by one.
 
+### Ctrl+Tab by recent use
+
+⌃Tab jumps to the tab you used last, in any window; ⌃⇧Tab goes the other way. Press again within a second to keep walking back through recent tabs.
+
+Chrome doesn't let extensions use the Tab key, so [Karabiner-Elements](https://karabiner-elements.pqrs.org) remaps ⌃Tab to ⌃. and ⌃⇧Tab to ⌃, while Chrome is in front, and the extension listens for those.
+
+1. `brew install --cask karabiner-elements`, open it and allow its keyboard driver in System Settings
+2. Karabiner → Complex Modifications → Add predefined rule → import `karabiner/ctrl-tab.json` and enable it
+3. Check `chrome://extensions/shortcuts`: "Next recently used tab" = ⌃. and "Previous recently used tab" = ⌃,
+
 ## Test
 
 ```bash

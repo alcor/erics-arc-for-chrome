@@ -110,9 +110,29 @@ async function closeTabs() {
   await chrome.tabs.remove(tabs.map(t => t.id));
 }
 
+// Recent tabs, Arc-style: ⌃Tab / ⌃⇧Tab walk through tabs in every window, most recently used
+// first. Chrome won't give extensions the Tab key, so Karabiner remaps them to ⌃. / ⌃, in Chrome
+// (karabiner/ctrl-tab.json). Presses less than a second apart keep walking the same list.
+// ponytail: ordered by Chrome's lastAccessed, so tabs passed through mid-walk count as used; track
+// our own history if that gets annoying.
+let walk = null;
+
+async function recent(step) {
+  if (!walk || Date.now() - walk.at > 1000) {
+    const tabs = await chrome.tabs.query({});
+    walk = { list: tabs.sort((a, b) => b.lastAccessed - a.lastAccessed).map(t => t.id), i: 0 };
+  }
+  walk.at = Date.now();
+  walk.i = (walk.i + step + walk.list.length) % walk.list.length;
+  const tab = await chrome.tabs.update(walk.list[walk.i], { active: true }).catch(() => null);
+  if (tab) await chrome.windows.update(tab.windowId, { focused: true });
+}
+
 chrome.action.onClicked.addListener(reset);
 
 chrome.commands.onCommand.addListener((command, tab) => {
+  if (command === 'recent-next') return recent(1);
+  if (command === 'recent-prev') return recent(-1);
   if (command === 'close-tab') return closeTabs();
   if (command === 'reset-tab') return reset(tab);
   if (command === 'repin-current') return repin(tab);
