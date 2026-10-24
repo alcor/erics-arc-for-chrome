@@ -1,5 +1,6 @@
-// The bar in the top-right of a Little Arc page: "Open in Chrome" (⌘O) and ▾ to pick a window or
-// tab group (⌥⌘O). Injected by little-arc.js on each page load inside a Little Arc.
+// The bar in the top-right of a Little Arc page: "Open in Chrome" and ▾ to pick a window or tab
+// group, labelled with whatever shortcuts are set for them. Injected by little-arc.js on each page
+// load inside a Little Arc.
 (() => {
   if (document.getElementById('erics-little-arc-bar')) return;
   const host = document.createElement('div');
@@ -24,8 +25,8 @@
       .dot { width: 8px; height: 8px; border-radius: 50%; }
     </style>
     <div class="bar">
-      <button class="open">Open in Chrome<kbd>⌘O</kbd></button>
-      <button class="caret" title="Open in… (⌥⌘O)">▾</button>
+      <button class="open">Open in Chrome<kbd></kbd></button>
+      <button class="caret" title="Open in…">▾</button>
     </div>
     <div class="menu" hidden></div>`;
   const menu = root.querySelector('.menu');
@@ -57,6 +58,13 @@
     }
     menu.hidden = false;
   }
+
+  chrome.runtime.sendMessage({ little: 'shortcuts' }).then(keys => {
+    const kbd = root.querySelector('kbd');
+    if (keys['little-open']) kbd.textContent = keys['little-open'];
+    else kbd.remove();
+    if (keys['little-open-in']) root.querySelector('.caret').title = `Open in… (${keys['little-open-in']})`;
+  });
 
   root.querySelector('.open').onclick = () => move();
   root.querySelector('.caret').onclick = toggleMenu;

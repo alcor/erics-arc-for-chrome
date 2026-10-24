@@ -1,8 +1,9 @@
 // Little Arc: small throwaway windows for quick lookups, like Arc's.
-// - ⌥⌘N (set it as a Global shortcut) opens one with a search box (little.html), from any app
+// - a Global shortcut opens one with a search box (little.html), from any app
 // - links opened from other apps open in one
 // - ⌥⌘-click a link opens it in one (little-click.js)
-// - ⌘O moves the page into the main window as a normal tab; ⌥⌘O or the ▾ picks a window or tab group
+// - "Open in Chrome" moves the page into the main window as a normal tab; ▾ picks a window or tab group
+//   (both also have shortcuts, see README)
 // - an "Open in Chrome" bar sits top-right of the page (little-bar.js)
 // - left unfocused for 12 hours, a Little Arc closes
 // Little Arcs are Chrome popup windows: no tab strip, no sidebar, back with ⌘[.
@@ -139,6 +140,7 @@ chrome.alarms.onAlarm.addListener(a => { if (a.name === 'little-archive') archiv
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.little === 'open') openLittle({ url: msg.url }).then(() => reply(true));
   else if (msg.little === 'targets') littleTargets().then(reply);
+  else if (msg.little === 'shortcuts') chrome.commands.getAll().then(cs => reply(Object.fromEntries(cs.map(c => [c.name, c.shortcut]))));
   else if (msg.little === 'move') moveToMain(sender.tab.id, msg.to).then(() => reply(true));
   else return;
   return true; // reply comes later
