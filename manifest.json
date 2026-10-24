@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Eric's Arc for Chrome",
+  "version": "1.2",
+  "description": "Arc features for Chrome's built-in tab bar.",
+  "minimum_chrome_version": "102",
+  "permissions": ["tabs", "tabGroups", "storage"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Reset pinned tab" },
+  "commands": {
+    "close-tab": {
+      "suggested_key": { "mac": "Command+W", "default": "Ctrl+W" },
+      "description": "Close tab (locked tabs come back at their locked URL)"
+    },
+    "reset-tab": {
+      "suggested_key": { "mac": "MacCtrl+R", "default": "Alt+R" },
+      "description": "Reset pinned tab to its pinned URL"
+    },
+    "repin-current": {
+      "description": "Replace pinned URL with current"
+    }
+  }
+}

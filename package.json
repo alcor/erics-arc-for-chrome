@@ -1,0 +1,11 @@
+{
+  "name": "erics-arc-for-chrome",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.58.0"
+  }
+}
