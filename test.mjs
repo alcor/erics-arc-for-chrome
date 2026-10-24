@@ -3,6 +3,7 @@
 import { chromium } from 'playwright-core';
 import http from 'node:http';
 import assert from 'node:assert';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -14,6 +15,7 @@ const base = `http://127.0.0.1:${server.address().port}`;
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'arc-for-chrome-test-'));
 const ctx = await chromium.launchPersistentContext(profile, {
   channel: 'chromium',
+  headless: !process.env.HEADFUL,
   args: [`--disable-extensions-except=${ext}`, `--load-extension=${ext}`],
 });
 const sw = ctx.serviceWorkers()[0] || await ctx.waitForEvent('serviceworker');
@@ -30,6 +32,14 @@ const go = (id, p) => sw.evaluate(([id, url]) => chrome.tabs.update(id, { url })
 const urlOf = id => sw.evaluate(async id => { const t = await chrome.tabs.get(id); return t.pendingUrl || t.url; }, id);
 const call = (fn, id) => sw.evaluate(async ([fn, id]) => { await self[fn](await chrome.tabs.get(id)); }, [fn, id]);
 const close = id => sw.evaluate(id => chrome.tabs.remove(id), id).then(settle);
+const pageFor = async url => {
+  for (let i = 0; i < 50; i++) {
+    const p = ctx.pages().find(p => p.url().startsWith(url));
+    if (p) return p;
+    await sleep(100);
+  }
+  throw new Error('no page for ' + url);
+};
 
 const a = await open('/a', true);
 const b = await open('/b', true);
@@ -85,9 +95,10 @@ await close(c);
 assert.deepEqual(await pinnedUrls(), [`${base}/x`, `${base}/b`]);
 console.log('unpinned tab ignored: ok');
 
-// Locked tab group: tabs in "CoreCore" behave like pinned tabs.
-const g1 = await open('/g1');
+// Locked tab group: tabs in "CoreCore" behave like pinned tabs. (New tabs open at the top, so g1,
+// opened last, ends up first.)
 const g2 = await open('/g2');
+const g1 = await open('/g1');
 await sw.evaluate(async ids => {
   const groupId = await chrome.tabs.group({ tabIds: ids });
   await chrome.tabGroups.update(groupId, { title: 'CoreCore', color: 'blue' });
@@ -137,6 +148,48 @@ assert.deepEqual((await sw.evaluate(() => chrome.storage.local.get('order'))).or
   { pinned: [`${base}/x`, `${base}/b`], CoreCore: [`${base}/g2`] });
 console.log('saved order: ok');
 
+// New tabs open right under the locked tabs: pinned, then the CoreCore group.
+const lastLockedIndex = () => sw.evaluate(async () => {
+  const [g] = await chrome.tabGroups.query({ title: 'CoreCore' });
+  const tabs = await chrome.tabs.query({ windowId: g.windowId });
+  return Math.max(...tabs.filter(t => t.pinned || t.groupId === g.id).map(t => t.index));
+});
+const indexOf = id => sw.evaluate(async id => (await chrome.tabs.get(id)).index, id);
+const n1 = await open('/n1');
+await settle();
+assert.equal(await indexOf(n1), (await lastLockedIndex()) + 1);
+console.log('new tab opens under CoreCore: ok');
+
+// A new tab that lands in CoreCore (a link opened from a CoreCore tab) is taken out and not locked.
+const corePage = await pageFor(`${base}/g2`);
+await corePage.bringToFront(); // Chrome records the active tab as a link's opener
+await corePage.evaluate(url => { document.body.innerHTML = `<a href="${url}">go</a>`; }, `${base}/from-core`);
+await corePage.click('a', { modifiers: ['Meta'] });
+await settle();
+const n2 = await sw.evaluate(async url => (await chrome.tabs.query({ url }))[0].id, `${base}/from-core`);
+assert.equal(await sw.evaluate(async id => (await chrome.tabs.get(id)).groupId, n2), -1);
+assert.equal(await indexOf(n2), (await lastLockedIndex()) + 1);
+assert.deepEqual(await groupUrls(), [`${base}/g2`]);
+console.log('new tab dropped into CoreCore is taken out: ok');
+
+// A link opened in a new tab from a normal tab lands right after that tab, not at the top.
+const n1Page = await pageFor(`${base}/n1`);
+await n1Page.bringToFront();
+await n1Page.evaluate(url => { document.body.innerHTML = `<a href="${url}">go</a>`; }, `${base}/from-n1`);
+await n1Page.click('a', { modifiers: ['Meta'] });
+await settle();
+const n3 = await sw.evaluate(async url => (await chrome.tabs.query({ url }))[0].id, `${base}/from-n1`);
+assert.equal(await indexOf(n3), (await indexOf(n1)) + 1);
+console.log('link from a normal tab opens right after it: ok');
+
+// ⌘T: Chrome gives the new tab an opener too, but a New Tab page still goes to the top.
+const n4 = await sw.evaluate(async opener => (await chrome.tabs.create({ url: 'chrome://newtab/', openerTabId: opener })).id, n1);
+await settle();
+assert.equal(await indexOf(n4), (await lastLockedIndex()) + 1);
+await sw.evaluate(ids => chrome.tabs.remove(ids), [n1, n2, n3, n4]);
+await settle();
+console.log('new tab page with an opener goes to the top: ok');
+
 // Recent tabs: ⌃Tab goes to the last used tab, quick repeats walk further back, ⌃⇧Tab walks forward.
 const activate = id => sw.evaluate(id => chrome.tabs.update(id, { active: true }), id).then(() => sleep(50));
 const active = () => sw.evaluate(async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0].id);
@@ -154,6 +207,69 @@ assert.equal(await active(), r1);
 await sw.evaluate(() => recent(-1));
 assert.equal(await active(), r2);
 console.log('quick repeats walk back, ctrl+shift+tab walks forward: ok');
+
+// Little Arc.
+const littleWindows = () => sw.evaluate(async () => {
+  const { little = {} } = await chrome.storage.session.get('little');
+  const wins = await chrome.windows.getAll({ populate: true });
+  return wins.filter(w => w.id in little).map(w => ({ id: w.id, type: w.type, urls: w.tabs.map(t => t.pendingUrl || t.url) }));
+});
+
+// ⌥⌘N: blank Little Arc with a search box; typing a URL goes there and the bar shows up.
+await sw.evaluate(() => littleCommand('little-new'));
+let [lw] = await littleWindows();
+assert.equal(lw.type, 'popup');
+assert.match(lw.urls[0], /little\.html$/);
+const box = await pageFor(lw.urls[0]);
+await box.fill('input', `${base}/little-typed`);
+await box.press('input', 'Enter');
+const typed = await pageFor(`${base}/little-typed`);
+await typed.waitForSelector('#erics-little-arc-bar', { state: 'attached' });
+console.log('little arc: new, type URL, bar shows: ok');
+
+// ⌘O: moves the page into the main window as a normal tab; the Little Arc goes away.
+const littleTab = await sw.evaluate(async id => (await chrome.tabs.query({ windowId: id }))[0].id, lw.id);
+await sw.evaluate(id => moveToMain(id), littleTab);
+await sleep(300);
+assert.deepEqual(await littleWindows(), []);
+assert.equal(await sw.evaluate(async id => (await chrome.windows.get((await chrome.tabs.get(id)).windowId)).type, littleTab), 'normal');
+assert.equal(await indexOf(littleTab), (await lastLockedIndex()) + 1);
+console.log('little arc: open in Chrome, lands under CoreCore: ok');
+
+// ⌥⌘-click a link opens it in a Little Arc.
+await go(await open('/with-link'), '/with-link');
+const linkPage = await pageFor(`${base}/with-link`);
+await linkPage.evaluate(url => { document.body.innerHTML = `<a href="${url}">go</a>`; }, `${base}/clicked`);
+await linkPage.click('a', { modifiers: ['Alt', 'Meta'] });
+await sleep(500);
+[lw] = await littleWindows();
+assert.deepEqual(lw.urls, [`${base}/clicked`]);
+assert.equal(linkPage.url(), `${base}/with-link`);
+console.log('little arc: alt-cmd-click: ok');
+
+// A page that finished loading before it moved into a Little Arc still gets the bar.
+const loaded = await open('/already-loaded');
+await sleep(300);
+await sw.evaluate(id => openLittle({ tabId: id }), loaded);
+await (await pageFor(`${base}/already-loaded`)).waitForSelector('#erics-little-arc-bar', { state: 'attached', timeout: 3000 });
+await sw.evaluate(id => chrome.tabs.remove(id), loaded);
+console.log('little arc: bar on an already-loaded page: ok');
+
+// Left alone for 12 hours, it closes.
+await sw.evaluate(async () => { await chrome.storage.session.set({ focused: -1 }); await archiveLittle(Date.now() + 13 * 3600e3); });
+await sleep(300);
+assert.deepEqual(await littleWindows(), []);
+console.log('little arc: archived after 12 hours: ok');
+
+// A link from another app (a second launch handing a URL to the running browser) opens in a Little Arc.
+// Headless Chromium doesn't accept that hand-off, so this one needs HEADFUL=1.
+if (process.env.HEADFUL) {
+  spawn(chromium.executablePath(), [`--user-data-dir=${profile}`, `${base}/from-other-app`], { stdio: 'ignore', detached: true }).unref();
+  for (let i = 0; i < 50 && !(await littleWindows()).length; i++) await sleep(100);
+  [lw] = await littleWindows();
+  assert.deepEqual(lw?.urls, [`${base}/from-other-app`]);
+  console.log('little arc: link from another app: ok');
+} else console.log('little arc: link from another app: skipped (run with HEADFUL=1)');
 
 await ctx.close();
 server.close();

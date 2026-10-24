@@ -84,13 +84,60 @@ chrome.tabs.onRemoved.addListener((tabId, { isWindowClosing }) => {
     delete where[tabId];
     await chrome.storage.session.set({ where });
     if (!url || !at) return sync(p => { delete p[tabId]; });
-    const tab = await chrome.tabs.create({ url, pinned: !at.group, active: false, windowId: at.windowId, index: at.index });
-    if (at.group) {
-      const [g] = await chrome.tabGroups.query({ windowId: at.windowId, title: at.group });
-      const groupId = await chrome.tabs.group(g ? { groupId: g.id, tabIds: tab.id } : { tabIds: tab.id, createProperties: { windowId: at.windowId } });
-      if (!g) await chrome.tabGroups.update(groupId, { title: at.group, color: at.color });
+    recreating++;
+    try {
+      const tab = await chrome.tabs.create({ url, pinned: !at.group, active: false, windowId: at.windowId, index: at.index });
+      if (at.group) {
+        const [g] = await chrome.tabGroups.query({ windowId: at.windowId, title: at.group });
+        const groupId = await chrome.tabs.group(g ? { groupId: g.id, tabIds: tab.id } : { tabIds: tab.id, createProperties: { windowId: at.windowId } });
+        if (!g) await chrome.tabGroups.update(groupId, { title: at.group, color: at.color });
+      }
+      await sync(p => { delete p[tabId]; p[tab.id] = url; });
+    } finally {
+      recreating--;
     }
-    await sync(p => { delete p[tabId]; p[tab.id] = url; });
+  });
+});
+
+// New tabs open at the top of the tab list, just under the locked tabs (pinned, then the CoreCore
+// group), like Arc's Today list. A tab opened from a link in a normal tab stays where Chrome puts
+// it, right after that tab. One opened from a locked tab goes to the top, and if Chrome dropped it
+// into the locked group it's taken out, so it doesn't get locked. Tabs in other groups are left alone.
+const STARTUP_GRACE_MS = 5000; // session restore recreates every tab; leave those where they are
+let browserStarted = 0;
+let recreating = 0; // locked tabs we're putting back stay where they're put
+chrome.runtime.onStartup.addListener(() => { browserStarted = Date.now(); });
+const starting = () => browserStarted && Date.now() - browserStarted < STARTUP_GRACE_MS;
+
+async function isLocked(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.pinned) return !!tab;
+  return tab.groupId !== -1 && LOCKED_GROUPS.includes((await chrome.tabGroups.get(tab.groupId)).title);
+}
+
+async function topIndex(windowId, exceptTabId) {
+  const groups = await chrome.tabGroups.query({ windowId });
+  const locked = new Set(groups.filter(g => LOCKED_GROUPS.includes(g.title)).map(g => g.id));
+  const tabs = await chrome.tabs.query({ windowId });
+  return tabs.filter(t => t.id !== exceptTabId && (t.pinned || locked.has(t.groupId)))
+    .reduce((top, t) => Math.max(top, t.index + 1), 0);
+}
+
+chrome.tabs.onCreated.addListener(created => {
+  if (recreating || created.pinned || starting()) return;
+  run(async () => {
+    const tab = await chrome.tabs.get(created.id).catch(() => null);
+    if (!tab || tab.pinned) return;
+    if ((await chrome.windows.get(tab.windowId)).type !== 'normal') return;
+    // Chrome records an opener for ⌘T too; only a link (not the New Tab page) stays by its opener.
+    const newTabPage = /^chrome:\/\/new-?tab/.test(created.pendingUrl || created.url);
+    if (tab.openerTabId && !newTabPage && !(await isLocked(tab.openerTabId))) return;
+    if (tab.groupId !== -1) {
+      if (!LOCKED_GROUPS.includes((await chrome.tabGroups.get(tab.groupId)).title)) return;
+      await chrome.tabs.ungroup(tab.id);
+    }
+    const index = await topIndex(tab.windowId, tab.id);
+    if (tab.index !== index) await chrome.tabs.move(tab.id, { index });
   });
 });
 
@@ -128,9 +175,12 @@ async function recent(step) {
   if (tab) await chrome.windows.update(tab.windowId, { focused: true });
 }
 
+importScripts('little-arc.js');
+
 chrome.action.onClicked.addListener(reset);
 
 chrome.commands.onCommand.addListener((command, tab) => {
+  if (command.startsWith('little-')) return littleCommand(command);
   if (command === 'recent-next') return recent(1);
   if (command === 'recent-prev') return recent(-1);
   if (command === 'close-tab') return closeTabs();

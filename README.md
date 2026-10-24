@@ -21,6 +21,10 @@ Pinned tabs, and tabs in the `CoreCore` tab group, remember the URL they had whe
 
 Locked URLs survive restarts by matching tabs in order, per pinned area and per group. If Chrome restores them in a different order, use "Replace pinned URL with current" or re-lock. Closing a whole window that has locked tabs, then quitting, can shift them by one.
 
+### New tabs at the top
+
+New tabs open at the top of the tab list, right under the locked tabs (pinned, then the CoreCore group), like Arc's Today list. That includes ⌘T and Little Arcs moved into Chrome. A link opened in a new tab from a normal tab lands right after that tab. A link opened from a pinned or CoreCore tab goes to the top instead, and doesn't join CoreCore (and get locked). Tabs in your other groups are left alone, and session restore doesn't reorder anything.
+
 ### Ctrl+Tab by recent use
 
 ⌃Tab jumps to the tab you used last, in any window; ⌃⇧Tab goes the other way. Press again within a second to keep walking back through recent tabs.
@@ -31,8 +35,27 @@ Chrome doesn't let extensions use the Tab key, so [Karabiner-Elements](https://k
 2. Karabiner → Complex Modifications → Add predefined rule → import `karabiner/ctrl-tab.json` and enable it
 3. Check `chrome://extensions/shortcuts`: "Next recently used tab" = ⌃. and "Previous recently used tab" = ⌃,
 
+### Little Arc
+
+Small throwaway windows for quick lookups, like Arc's Little Arc. They're Chrome popup windows: no tab strip, no sidebar; ⌘[ goes back.
+
+- **⌥⌘N**, from any app: a new Little Arc with a search box. Type a URL or a search (uses Chrome's default search engine). Esc closes it.
+- **Links from other apps** (Slack, Mail, …) open in a Little Arc. Chrome must be the default browser.
+- **⌥⌘-click** a link on any page to open it in a Little Arc.
+- **⌘O** or **Open in Chrome** (top right of the page): move it into the main window as a normal tab.
+- **⌥⌘O** or **▾**: pick a window or tab group to move it into.
+- Little Arcs left unfocused for 12 hours close themselves.
+- Size and position are remembered.
+
+Set the shortcuts in `chrome://extensions/shortcuts` (Chrome doesn't assign new ones on update):
+"New Little Arc" = ⌥⌘N with scope **Global**, "Little Arc: open in Chrome" = ⌘O, "Little Arc: open in window or tab group…" = ⌥⌘O.
+
+Links from other apps land in the main window for a moment before moving into the Little Arc, so the main window flashes.
+
 ## Test
 
 ```bash
 npm install && npx playwright-core install chromium && npm test
 ```
+
+`HEADFUL=1 npm test` also checks links from other apps, which headless Chromium can't receive.
