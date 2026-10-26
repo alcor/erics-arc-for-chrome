@@ -5,8 +5,24 @@ Arc's best habits for Google Chrome on macOS, working with Chrome's own (vertica
 - a Chrome extension (this folder): locked tabs, new tabs at the top, ⌃Tab by recent use, Little Arc
 - [Karabiner-Elements](https://karabiner-elements.pqrs.org) rule: turns ⌃Tab into keys the extension can use
 - Chrome Launcher app: starts Chrome with launch flags so typed words + Enter go to the page you visited
-- macOS App Shortcuts: ⌘S hides/shows the tab sidebar
+- macOS App Shortcuts: ⌘S hides/shows the tab sidebar, ⌥⌘↓/↑ move through the tab list
 - an optional one-time import of your Arc history and form autofill
+
+## Shortcuts at a glance
+
+| Keys | What it does | Set by |
+|---|---|---|
+| ⌘S | Hide / show the vertical tab sidebar | `setup.sh` |
+| ⌥⌘↓ / ⌥⌘↑ | Next / previous tab in the tab list | `setup.sh` |
+| ⌃Tab / ⌃⇧Tab | Most recently used tab (repeat quickly to go further back) | `setup.sh` (Karabiner) + extension shortcut |
+| ⌃R | Reset a pinned or CoreCore tab to its locked URL | extension shortcut |
+| ⌘W, middle-click | Close; pinned and CoreCore tabs come back at their locked URL | Chrome (⌘W optionally the extension) |
+| ⌥⇧N, from any app | New Little Arc | extension shortcut (Global) |
+| ⌘O / ⇧⌘O | Little Arc → open in Chrome / pick a window or group | extension shortcut |
+| ⌥⌘-click a link | Open it in a Little Arc | extension |
+| ⇧⌘S | Save Page As (moved off ⌘S) | `setup.sh` |
+
+"Extension shortcut" means you set it in `chrome://extensions/shortcuts` (step 7 below).
 
 ## Set up on a new Mac
 
