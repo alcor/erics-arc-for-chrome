@@ -101,7 +101,7 @@ New tabs open at the top of the tab list, right under the locked tabs, like Arc'
 
 ### ⌃Tab by recent use
 
-⌃Tab jumps to the tab you used last, in any window. Keep holding ⌃ and press Tab again to go further back through recent tabs; ⌃⇧Tab steps back one. Letting go of ⌃ starts over, so ⌃Tab, release, ⌃Tab takes you back to where you were.
+⌃Tab jumps to the tab you used last, in any window. Keep holding ⌃ and press Tab again to go further back through recent tabs; ⌃⇧Tab steps back one. Letting go of ⌃ starts over, and only the tab you end on counts as used, so ⌃Tab, release, ⌃Tab takes you back to where you started, even after going several tabs back (A → B → C, release, ⌃Tab → A).
 
 Chrome doesn't let extensions use the Tab key or tell them when ⌃ is released, so the Karabiner rule (`karabiner/ctrl-tab.json`) does that part while Chrome is in front: the first ⌃Tab since ⌃ went down becomes ⌃., more ⌃Tabs while ⌃ is held become ⌃⇧., and ⌃⇧Tab becomes ⌃,.
 

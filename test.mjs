@@ -212,6 +212,25 @@ await command('recent-prev'); // still holding: ⌃⇧Tab
 assert.equal(await active(), r2);
 console.log('holding control walks back, ctrl+shift+tab steps back: ok');
 
+// From A, ⌃Tab ⌃Tab to C, release, ⌃Tab: back to A (the tab the walk passed through doesn't count).
+const [tabA, tabB, tabC] = [r1, r2, r3];
+await activate(tabC); await activate(tabB); await activate(tabA); // recent order: A, B, C
+await sleep(1100);
+await command('recent-next');
+await command('recent-continue');
+assert.equal(await active(), tabC);
+await sleep(300);
+await command('recent-next');
+assert.equal(await active(), tabA);
+console.log('walk A to C, release, ctrl+tab goes back to A: ok');
+
+// Clicking a tab yourself counts as using it.
+await activate(tabB);
+await sleep(300);
+await command('recent-next');
+assert.equal(await active(), tabA);
+console.log('clicked tab counts, ctrl+tab returns to the one before: ok');
+
 // Little Arc.
 const littleWindows = () => sw.evaluate(async () => {
   const { little = {} } = await chrome.storage.session.get('little');

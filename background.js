@@ -164,19 +164,63 @@ async function closeTabs() {
 //   ⌃.  first ⌃Tab since Control went down: start a new walk (recent-next)
 //   ⌃⇧. more ⌃Tabs with Control still held: keep walking (recent-continue)
 //   ⌃,  ⌃⇧Tab: walk back one step (recent-prev)
-// ponytail: ordered by Chrome's lastAccessed, so tabs passed through mid-walk count as used; track
-// our own history if that gets annoying.
-let walk = null;
+// The order is our own most-recently-used list (newest first, in session storage), not Chrome's
+// lastAccessed: tabs a walk passes through don't count as used, only the one it ends on does. So
+// A → B → C, release, ⌃Tab goes back to A, not B. Tabs we haven't seen yet fall back to lastAccessed.
+let walk = null; // { list, i, visited }
 
-async function recent(step, fresh) {
-  if (fresh || !walk) {
-    const tabs = await chrome.tabs.query({});
-    walk = { list: tabs.sort((a, b) => b.lastAccessed - a.lastAccessed).map(t => t.id), i: 0 };
-  }
-  walk.i = (walk.i + step + walk.list.length) % walk.list.length;
-  const tab = await chrome.tabs.update(walk.list[walk.i], { active: true }).catch(() => null);
-  if (tab) await chrome.windows.update(tab.windowId, { focused: true });
+async function mruList() {
+  const { mru = [] } = await chrome.storage.session.get('mru');
+  const tabs = await chrome.tabs.query({});
+  const known = mru.filter(id => tabs.some(t => t.id === id));
+  const rest = tabs.filter(t => !known.includes(t.id)).sort((a, b) => b.lastAccessed - a.lastAccessed);
+  return [...known, ...rest.map(t => t.id)];
 }
+
+async function touch(tabId) {
+  const list = await mruList();
+  await chrome.storage.session.set({ mru: [tabId, ...list.filter(id => id !== tabId)] });
+}
+
+// A walk ends when the next one starts or you go to a tab some other way; only then does the tab it
+// ended on count as used.
+async function endWalk() {
+  if (!walk) return;
+  const last = walk.list[walk.i];
+  walk = null;
+  await touch(last);
+}
+
+function recent(step, fresh) {
+  return run(async () => {
+    if (fresh || !walk) {
+      await endWalk();
+      walk = { list: await mruList(), i: 0, visited: new Set() };
+    }
+    walk.i = (walk.i + step + walk.list.length) % walk.list.length;
+    const id = walk.list[walk.i];
+    walk.visited.add(id);
+    walk.at = Date.now();
+    const tab = await chrome.tabs.update(id, { active: true }).catch(() => null);
+    if (tab) await chrome.windows.update(tab.windowId, { focused: true });
+  });
+}
+
+function activated(tabId) {
+  return run(async () => {
+    // The walk's own moves arrive a moment after each step; a later click on one of those tabs is yours.
+    if (walk?.visited.has(tabId) && Date.now() - walk.at < 1000) return;
+    await endWalk();
+    await touch(tabId);
+  });
+}
+
+chrome.tabs.onActivated.addListener(({ tabId }) => activated(tabId));
+chrome.windows.onFocusChanged.addListener(async windowId => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  const [tab] = await chrome.tabs.query({ active: true, windowId });
+  if (tab) activated(tab.id);
+});
 
 importScripts('little-arc.js');
 
