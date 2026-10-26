@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Eric's Arc for Chrome",
-  "version": "1.9",
+  "version": "2.0",
   "description": "Arc features for Chrome's built-in tab bar.",
   "minimum_chrome_version": "121",
   "permissions": ["tabs", "tabGroups", "storage", "webNavigation", "scripting", "search", "alarms"],
@@ -25,11 +25,14 @@
     },
     "recent-next": {
       "suggested_key": { "mac": "MacCtrl+Period", "default": "Ctrl+Period" },
-      "description": "Next recently used tab (Karabiner sends this for Ctrl+Tab)"
+      "description": "Recently used tab: start (Karabiner sends this for the first Ctrl+Tab)"
+    },
+    "recent-continue": {
+      "description": "Recently used tab: keep going (Karabiner sends Ctrl+Shift+Period for more Ctrl+Tabs)"
     },
     "recent-prev": {
       "suggested_key": { "mac": "MacCtrl+Comma", "default": "Ctrl+Comma" },
-      "description": "Previous recently used tab (Karabiner sends this for Ctrl+Shift+Tab)"
+      "description": "Recently used tab: step back (Karabiner sends this for Ctrl+Shift+Tab)"
     },
     "little-new": {
       "description": "New Little Arc (set its scope to Global)"

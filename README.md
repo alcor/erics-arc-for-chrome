@@ -14,7 +14,7 @@ Arc's best habits for Google Chrome on macOS, working with Chrome's own (vertica
 |---|---|---|
 | ⌘S | Hide / show the vertical tab sidebar | `setup.sh` |
 | ⌥⌘↓ / ⌥⌘↑ | Next / previous tab in the tab list | `setup.sh` |
-| ⌃Tab / ⌃⇧Tab | Most recently used tab (repeat quickly to go further back) | `setup.sh` (Karabiner) + extension shortcut |
+| ⌃Tab / ⌃⇧Tab | Most recently used tab; keep holding ⌃ and press Tab again to go further back, let go to start over | `setup.sh` (Karabiner) + extension shortcut |
 | ⌃R | Reset a pinned or CoreCore tab to its locked URL | extension shortcut |
 | ⌘W, middle-click | Close; pinned and CoreCore tabs come back at their locked URL | Chrome (⌘W optionally the extension) |
 | ⌥⇧N, from any app | New Little Arc | extension shortcut (Global) |
@@ -66,8 +66,9 @@ Karabiner sends every keyboard through its own virtual keyboard, so per-keyboard
 | Close tab (locked tabs come back at their locked URL) | ⌘W (optional: skips Chrome's "press ⌘W again" toast on pinned tabs) | In Chrome |
 | Reset pinned tab to its pinned URL | ⌃R | In Chrome |
 | Replace pinned URL with current | anything, or none | In Chrome |
-| Next recently used tab | ⌃. (Karabiner sends it for ⌃Tab) | In Chrome |
-| Previous recently used tab | ⌃, (Karabiner sends it for ⌃⇧Tab) | In Chrome |
+| Recently used tab: start | ⌃. (Karabiner sends it for the first ⌃Tab) | In Chrome |
+| Recently used tab: keep going | ⌃⇧. (Karabiner sends it for more ⌃Tabs while ⌃ is held) | In Chrome |
+| Recently used tab: step back | ⌃, (Karabiner sends it for ⌃⇧Tab) | In Chrome |
 | New Little Arc | ⌥⇧N | **Global** |
 | Little Arc: open in Chrome | ⌘O | In Chrome |
 | Little Arc: open in window or tab group… | ⇧⌘O | In Chrome |
@@ -98,7 +99,9 @@ New tabs open at the top of the tab list, right under the locked tabs, like Arc'
 
 ### ⌃Tab by recent use
 
-⌃Tab jumps to the tab you used last, in any window; ⌃⇧Tab goes the other way. Press again within a second to keep walking back through recent tabs. Chrome doesn't let extensions use the Tab key, so the Karabiner rule (`karabiner/ctrl-tab.json`) remaps ⌃Tab to ⌃. and ⌃⇧Tab to ⌃, while Chrome is in front.
+⌃Tab jumps to the tab you used last, in any window. Keep holding ⌃ and press Tab again to go further back through recent tabs; ⌃⇧Tab steps back one. Letting go of ⌃ starts over, so ⌃Tab, release, ⌃Tab takes you back to where you were.
+
+Chrome doesn't let extensions use the Tab key or tell them when ⌃ is released, so the Karabiner rule (`karabiner/ctrl-tab.json`) does that part while Chrome is in front: the first ⌃Tab since ⌃ went down becomes ⌃., more ⌃Tabs while ⌃ is held become ⌃⇧., and ⌃⇧Tab becomes ⌃,.
 
 ### Little Arc
 

@@ -190,23 +190,27 @@ await sw.evaluate(ids => chrome.tabs.remove(ids), [n1, n2, n3, n4]);
 await settle();
 console.log('new tab page with an opener goes to the top: ok');
 
-// Recent tabs: ⌃Tab goes to the last used tab, quick repeats walk further back, ⌃⇧Tab walks forward.
+// Recent tabs. Karabiner sends recent-next for the first ⌃Tab after Control goes down, recent-continue
+// for more ⌃Tabs while Control is held, recent-prev for ⌃⇧Tab.
 const activate = id => sw.evaluate(id => chrome.tabs.update(id, { active: true }), id).then(() => sleep(50));
 const active = () => sw.evaluate(async () => (await chrome.tabs.query({ active: true, lastFocusedWindow: true }))[0].id);
+const command = name => sw.evaluate(async name => {
+  const fn = { 'recent-next': () => recent(1, true), 'recent-continue': () => recent(1, false), 'recent-prev': () => recent(-1, false) }[name];
+  await fn();
+}, name);
 const r1 = await open('/r1'), r2 = await open('/r2'), r3 = await open('/r3');
 await activate(r1); await activate(r2); await activate(r3);
-await sw.evaluate(() => recent(1));
+await command('recent-next'); // ⌃Tab, release
 assert.equal(await active(), r2);
-await sleep(1100);
-await sw.evaluate(() => recent(1));
+await command('recent-next'); // ⌃Tab again right away: back where we came from
 assert.equal(await active(), r3);
-console.log('ctrl+tab toggles last two: ok');
-await sleep(1100);
-await sw.evaluate(async () => { await recent(1); await recent(1); });
+console.log('ctrl+tab, release, ctrl+tab goes back: ok');
+await command('recent-next'); // hold Control: ⌃Tab, ⌃Tab
+await command('recent-continue');
 assert.equal(await active(), r1);
-await sw.evaluate(() => recent(-1));
+await command('recent-prev'); // still holding: ⌃⇧Tab
 assert.equal(await active(), r2);
-console.log('quick repeats walk back, ctrl+shift+tab walks forward: ok');
+console.log('holding control walks back, ctrl+shift+tab steps back: ok');
 
 // Little Arc.
 const littleWindows = () => sw.evaluate(async () => {

@@ -35,8 +35,9 @@ else:
     cfg = {'profiles': [{'name': 'Default profile', 'selected': True}]}
 profile = next((p for p in cfg['profiles'] if p.get('selected')), cfg['profiles'][0])
 mods = profile.setdefault('complex_modifications', {}).setdefault('rules', [])
-names = {r['description'] for r in rules}
-mods[:] = [r for r in mods if r.get('description') not in names] + rules
+# Replace this project's rule, including older versions of it with a different description.
+ours = lambda r: r.get('description', '').startswith('Chrome: Ctrl+Tab / Ctrl+Shift+Tab')
+mods[:] = [r for r in mods if not ours(r)] + rules
 # Write a sibling file, then rename over the original, so an interruption can't leave half a config.
 with open(path + '.tmp', 'w') as f:
     json.dump(cfg, f, indent=2)
