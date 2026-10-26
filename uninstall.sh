@@ -1,5 +1,5 @@
 #!/bin/sh
-# Undoes setup.sh: removes Chrome Launcher (app, login item, Dock icon), this project's two Chrome App
+# Undoes setup.sh: removes Chrome Launcher (app, login item, Dock icon), this project's Chrome App
 # Shortcuts (other App Shortcuts stay), and its Karabiner rule (Karabiner itself stays installed).
 # The extension is removed by hand in chrome://extensions.
 set -eu
@@ -26,7 +26,7 @@ def drop_dock_tile(dock):
 
 def drop_app_shortcuts(chrome):
     keys = chrome.get('NSUserKeyEquivalents', {})
-    removed = [k for k in ('Collapse Vertical Tabs', 'Save Page As…') if keys.pop(k, None) is not None]
+    removed = [k for k in ('Collapse Vertical Tabs', 'Save Page As…', 'Select Next Tab', 'Select Previous Tab') if keys.pop(k, None) is not None]
     return bool(removed)
 
 edit_defaults('com.apple.dock', drop_dock_tile)

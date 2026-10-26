@@ -20,7 +20,7 @@ Use this repository's clone URL from its GitHub page (Code → HTTPS), for examp
 git clone https://github.com/YOUR-GITHUB-USERNAME/erics-arc-for-chrome.git ~/dev/erics-arc-for-chrome
 ```
 
-**2. Run the setup script.** It sets the Chrome menu shortcuts, installs Karabiner-Elements (asks for your password) with the ⌃Tab rule, and installs Chrome Launcher with a login item and a Dock icon. Safe to re-run.
+**2. Run the setup script.** It sets the Chrome menu shortcuts (⌘S, ⌃⌘↓/↑), installs Karabiner-Elements (asks for your password) with the ⌃Tab rule, and installs Chrome Launcher with a login item and a Dock icon. Safe to re-run.
 
 ```bash
 ~/dev/erics-arc-for-chrome/setup.sh
@@ -101,9 +101,14 @@ Typing words and pressing Enter opens the page from your history that matches th
 
 To change launch flags: edit `launcher/chrome-launcher.sh`, re-run `launcher/install.sh`, then quit Chrome and open the launcher.
 
-### ⌘S hides the tab sidebar
+### Chrome menu shortcuts
 
-`setup.sh` adds macOS App Shortcuts for Chrome: ⌘S → View → Collapse Vertical Tabs, and Save Page As moves to ⇧⌘S. They're in System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts.
+`setup.sh` adds macOS App Shortcuts for Chrome's own menu items:
+
+- **⌘S** → View → Collapse Vertical Tabs (hides/shows the tab sidebar, like Arc). Save Page As moves to ⇧⌘S.
+- **⌃⌘↓ / ⌃⌘↑** → Tab → Select Next / Previous Tab: move down / up the tab list.
+
+They're in System Settings → Keyboard → Keyboard Shortcuts → App Shortcuts, and take effect when Chrome restarts.
 
 ### Split view
 
