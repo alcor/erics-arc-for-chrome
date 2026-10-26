@@ -57,6 +57,7 @@ Karabiner sends every keyboard through its own virtual keyboard, so per-keyboard
 - Right-click the tab bar → **Show Tabs Vertically**
 - Settings → On startup → **Continue where you left off**
 - Settings → Default browser → **Make default** (Little Arc catches links from other apps)
+- `chrome://flags/#browser-initiated-automatic-picture-in-picture` → **Enabled**, then relaunch from Chrome Launcher: a playing video (YouTube, X, …) pops out into a floating window when you switch tabs, like Arc's mini player. Chrome's ♫ toolbar button gives play/pause for any tab playing sound.
 
 **6. Load the extension.** `chrome://extensions` → turn on **Developer mode** → **Load unpacked** → pick `~/dev/erics-arc-for-chrome`. When you pull changes later, click ↻ on its card.
 
