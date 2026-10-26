@@ -137,8 +137,26 @@ chrome.windows.onBoundsChanged.addListener(async w => {
 chrome.alarms.create('little-archive', { periodInMinutes: 30 });
 chrome.alarms.onAlarm.addListener(a => { if (a.name === 'little-archive') archiveLittle(); });
 
+// What a Little Arc search box or address field means: a URL goes straight there, anything else is a
+// search with Chrome's default engine.
+function asUrl(text) {
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return text;
+  if (/\s/.test(text)) return null;
+  if (/^(localhost|\d{1,3}(\.\d{1,3}){3})(:\d+)?(\/|$)/.test(text) || /^[^/]+\.[a-z]{2,}(:\d+)?(\/|$)/i.test(text)) {
+    return (text.startsWith('localhost') ? 'http://' : 'https://') + text;
+  }
+  return null;
+}
+
+async function littleGo(tabId, text) {
+  const url = asUrl(text);
+  if (url) await chrome.tabs.update(tabId, { url });
+  else await chrome.search.query({ text, tabId });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (msg.little === 'open') openLittle({ url: msg.url }).then(() => reply(true));
+  else if (msg.little === 'go') littleGo(sender.tab.id, msg.text).then(() => reply(true));
   else if (msg.little === 'targets') littleTargets().then(reply);
   else if (msg.little === 'shortcuts') chrome.commands.getAll().then(cs => reply(Object.fromEntries(cs.map(c => [c.name, c.shortcut]))));
   else if (msg.little === 'move') moveToMain(sender.tab.id, msg.to).then(() => reply(true));

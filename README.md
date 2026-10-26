@@ -20,6 +20,7 @@ Arc's best habits for Google Chrome on macOS, working with Chrome's own (vertica
 | ⌥⇧N, from any app | New Little Arc | extension shortcut (Global) |
 | ⌘O / ⇧⌘O | Little Arc → open in Chrome / pick a window or group | extension shortcut |
 | ⌥⌘-click a link | Open it in a Little Arc | extension |
+| ⌘L in a Little Arc | Show its address (selected, ready to ⌘C); type a URL or search + Enter to go | extension |
 | ⇧⌘S | Save Page As (moved off ⌘S) | `setup.sh` |
 
 "Extension shortcut" means you set it in `chrome://extensions/shortcuts` (step 7 below).
@@ -110,6 +111,7 @@ Small throwaway windows for quick lookups. They're Chrome popup windows: no tab 
 - **⌥⇧N**, from any app: a new Little Arc with a search box. Type a URL or a search (uses Chrome's default search engine). Esc closes it.
 - **Links from other apps** (Slack, Mail, …) open in a Little Arc. They land in the main window for a moment first, so it flashes.
 - **⌥⌘-click** a link on any page to open it in a Little Arc.
+- **⌘L** or **🔗** (top right): an address field with the page's URL selected, so ⌘C copies it. Type a URL or search and press Enter to go there; Esc closes it. (Chrome's popup windows have no address bar of their own.)
 - **⌘O** or **Open in Chrome** (top right of the page): move it into the main window as a normal tab.
 - **⇧⌘O** or **▾**: pick a window or tab group to move it into.
 - Little Arcs left unfocused for 12 hours close themselves. Size and position are remembered.

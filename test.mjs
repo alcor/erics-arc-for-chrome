@@ -231,6 +231,14 @@ const typed = await pageFor(`${base}/little-typed`);
 await typed.waitForSelector('#erics-little-arc-bar', { state: 'attached' });
 console.log('little arc: new, type URL, bar shows: ok');
 
+// ⌘L opens the address field with the URL selected; typing a new one and Enter goes there.
+await typed.keyboard.press('Meta+l');
+assert.equal(await typed.evaluate(() => getSelection().toString()), `${base}/little-typed`); // ready to ⌘C
+await typed.keyboard.type(`${base}/little-cmd-l`);
+await typed.keyboard.press('Enter');
+await pageFor(`${base}/little-cmd-l`);
+console.log('little arc: cmd+L address field: ok');
+
 // ⌘O: moves the page into the main window as a normal tab; the Little Arc goes away.
 const littleTab = await sw.evaluate(async id => (await chrome.tabs.query({ windowId: id }))[0].id, lw.id);
 await sw.evaluate(id => moveToMain(id), littleTab);
