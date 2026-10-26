@@ -7,14 +7,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 [ -d "/Applications/Google Chrome.app" ] || { echo "Install Google Chrome first: https://www.google.com/chrome/"; exit 1; }
 
 # 1. Chrome menu shortcuts (macOS App Shortcuts): ⌘S collapses/expands the vertical tab sidebar like
-#    Arc; Save Page As moves to ⇧⌘S so the two don't clash; ⌃⌘↓ / ⌃⌘↑ move down / up the tab list.
+#    Arc; Save Page As moves to ⇧⌘S so the two don't clash; ⌥⌘↓ / ⌥⌘↑ move down / up the tab list.
 #    Takes effect next time Chrome starts. (\357\234\201 and \357\234\200 are the UTF-8 for the
 #    down/up arrow key characters, U+F701 / U+F700.)
 defaults write com.google.Chrome NSUserKeyEquivalents -dict-add \
   "Collapse Vertical Tabs" "@s" \
   "Save Page As…" '@$s' \
-  "Select Next Tab" "$(printf '@^\357\234\201')" \
-  "Select Previous Tab" "$(printf '@^\357\234\200')"
+  "Select Next Tab" "$(printf '@~\357\234\201')" \
+  "Select Previous Tab" "$(printf '@~\357\234\200')"
 echo "chrome menu shortcuts: set"
 
 # 2. Karabiner-Elements, which turns ⌃Tab / ⌃⇧Tab into keys the extension can use (Chrome only).
