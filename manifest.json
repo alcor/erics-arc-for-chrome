@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Eric's Arc for Chrome",
-  "version": "2.2",
+  "version": "2.3",
   "description": "Arc features for Chrome's built-in tab bar.",
   "minimum_chrome_version": "121",
   "permissions": ["tabs", "tabGroups", "storage", "webNavigation", "scripting", "search", "alarms"],

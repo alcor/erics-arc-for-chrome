@@ -231,6 +231,17 @@ await command('recent-next');
 assert.equal(await active(), tabA);
 console.log('clicked tab counts, ctrl+tab returns to the one before: ok');
 
+// A link opened in a background tab is next: ⌃Tab goes to it, then ⌃Tab comes back.
+const bg = await sw.evaluate(async () => (await chrome.tabs.create({ url: 'about:blank', active: false })).id);
+await settle();
+await command('recent-next');
+assert.equal(await active(), bg);
+await sleep(300);
+await command('recent-next');
+assert.equal(await active(), tabA);
+await close(bg);
+console.log('background tab is next for ctrl+tab: ok');
+
 // Little Arc.
 const littleWindows = () => sw.evaluate(async () => {
   const { little = {} } = await chrome.storage.session.get('little');

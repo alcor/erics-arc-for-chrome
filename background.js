@@ -177,9 +177,10 @@ async function mruList() {
   return [...known, ...rest.map(t => t.id)];
 }
 
-async function touch(tabId) {
-  const list = await mruList();
-  await chrome.storage.session.set({ mru: [tabId, ...list.filter(id => id !== tabId)] });
+async function touch(tabId, at = 0) {
+  const list = (await mruList()).filter(id => id !== tabId);
+  list.splice(at, 0, tabId);
+  await chrome.storage.session.set({ mru: list });
 }
 
 // A walk ends when the next one starts or you go to a tab some other way; only then does the tab it
@@ -216,6 +217,15 @@ function activated(tabId) {
 }
 
 chrome.tabs.onActivated.addListener(({ tabId }) => activated(tabId));
+// A tab opened in the background (right-click ▸ Open Link in New Tab, ⌘-click) goes right after the
+// current tab, so the next ⌃Tab goes to it. Locked tabs we put back and restored tabs don't.
+chrome.tabs.onCreated.addListener(tab => {
+  if (tab.active || recreating || starting()) return;
+  run(async () => {
+    await endWalk(); // so the tab you're on is first in the list
+    await touch(tab.id, 1);
+  });
+});
 chrome.windows.onFocusChanged.addListener(async windowId => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
   const [tab] = await chrome.tabs.query({ active: true, windowId });
