@@ -48,6 +48,9 @@ EOF
 # 3. Chrome Launcher: starts Chrome with the launch flags, at login and from the Dock.
 "$here/launcher/install.sh"
 
+# 4. Sidebar mini player: a small Mac app the extension shows over the tab sidebar while music plays.
+"$here/player/install.sh"
+
 cat <<'EOF'
 
 Done with the scripted part. Continue with step 3 of "Set up on a new Mac" in README.md:

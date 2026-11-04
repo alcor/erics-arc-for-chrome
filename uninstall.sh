@@ -1,6 +1,7 @@
 #!/bin/sh
-# Undoes setup.sh: removes Chrome Launcher (app, login item, Dock icon), this project's Chrome App
-# Shortcuts (other App Shortcuts stay), and its Karabiner rule (Karabiner itself stays installed).
+# Undoes setup.sh: removes Chrome Launcher (app, login item, Dock icon), the mini player's Chrome
+# registration, this project's Chrome App Shortcuts (other App Shortcuts stay), and its Karabiner rule
+# (Karabiner itself stays installed).
 # The extension is removed by hand in chrome://extensions.
 set -eu
 app="$HOME/Applications/Chrome Launcher.app"
@@ -8,6 +9,7 @@ agent="$HOME/Library/LaunchAgents/local.arc-for-chrome.launcher.plist"
 
 launchctl bootout "gui/$(id -u)" "$agent" 2>/dev/null || true
 rm -rf "$app" "$agent"
+rm -f "$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/erics_arc_player.json"
 
 python3 -I - <<'EOF'
 import json, os, plistlib, subprocess

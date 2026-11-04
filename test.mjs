@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 
 const ext = import.meta.dirname;
 const server = http.createServer((req, res) => res.end(`<title>${req.url}</title>${req.url}`)).listen(0);
@@ -312,6 +313,60 @@ if (process.env.HEADFUL) {
   assert.deepEqual(lw?.urls, [`${base}/from-other-app`]);
   console.log('little arc: link from another app: ok');
 } else console.log('little arc: link from another app: skipped (run with HEADFUL=1)');
+
+// Mini player: player/install.sh works out the extension's ID from its folder the way Chrome does.
+const idFromPath = p => [...crypto.createHash('sha256').update(p).digest('hex').slice(0, 32)]
+  .map(c => String.fromCharCode(97 + parseInt(c, 16))).join('');
+assert.equal(await sw.evaluate(() => chrome.runtime.id), idFromPath(fs.realpathSync(ext)));
+console.log('mini player: extension id from folder: ok');
+
+// A music site's track reaches the player, and the player's buttons reach the site's handlers.
+await ctx.route('https://open.spotify.com/**', route => route.fulfill({ contentType: 'text/html', body: `<script>
+  navigator.mediaSession.metadata = new MediaMetadata({ title: 'Song', artist: 'Band', artwork: [{ src: '/small.png' }, { src: '/big.png' }] });
+  navigator.mediaSession.setActionHandler('nexttrack', () => { document.title = 'next'; });
+</script>` }));
+const songPage = await ctx.newPage(); // (tabs the extension opens don't go through ctx.route)
+await songPage.goto('https://open.spotify.com/');
+const song = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://open.spotify.com/*' }))[0].id);
+for (let i = 0; i < 50 && !(await sw.evaluate(id => music.has(id), song)); i++) await sleep(100);
+const state = await sw.evaluate(() => playerState());
+assert.deepEqual([state.title, state.artist, state.artwork], ['Song', 'Band', 'https://open.spotify.com/big.png']);
+await sw.evaluate(() => playerAction({ action: 'nexttrack' }));
+await songPage.waitForFunction(() => document.title === 'next', null, { timeout: 3000 });
+// Shows while you're on another tab with the sidebar open; × hides it until you've been back on the
+// music tab. (Headless Chromium has no sidebar and won't move focus, so the focused window is faked.)
+const onTab = id => sw.evaluate(async id => {
+  chrome.windows.getLastFocused = async () => ({ type: 'normal', state: 'normal', left: 0, top: 0, width: 1200, height: 800,
+    tabs: [{ id, active: true, width: 950 }] });
+  return (await playerState()).show;
+}, id);
+assert.equal(await onTab(-1), true);
+await sw.evaluate(() => playerAction({ action: 'close' }));
+assert.equal(await onTab(-1), false);
+assert.equal(await onTab(song), false); // on the music tab: never shown
+assert.equal(await onTab(-1), true);
+await close(song);
+assert.equal(await sw.evaluate(id => music.has(id), song), false);
+console.log('mini player: track info and buttons: ok');
+
+// The helper (if built: player/install.sh) reads a message that arrives in pieces, stays up, and quits
+// when Chrome closes the connection.
+const helper = path.join(ext, 'player/ArcPlayer');
+if (fs.existsSync(helper)) {
+  const p = spawn(helper, [], { stdio: ['pipe', 'ignore', 'inherit'] });
+  const body = Buffer.from(JSON.stringify({ show: false, title: 'Song' }));
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(body.length);
+  const frame = Buffer.concat([header, body]);
+  p.stdin.write(frame.subarray(0, 2));
+  await sleep(200);
+  p.stdin.write(frame.subarray(2));
+  await sleep(500);
+  assert.equal(p.exitCode, null);
+  p.stdin.end();
+  assert.equal(await new Promise(r => p.on('exit', r)), 0);
+  console.log('mini player: helper reads messages, quits with Chrome: ok');
+} else console.log('mini player: helper: skipped (run player/install.sh)');
 
 await ctx.close();
 server.close();

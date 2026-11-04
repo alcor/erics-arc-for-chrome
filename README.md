@@ -2,7 +2,8 @@
 
 Arc's best habits for Google Chrome on macOS, working with Chrome's own (vertical) tab bar. No sidebar, no extra window. Pieces:
 
-- a Chrome extension (this folder): locked tabs, new tabs at the top, ⌃Tab by recent use, Little Arc
+- a Chrome extension (this folder): locked tabs, new tabs at the top, ⌃Tab by recent use, Little Arc, sidebar mini player
+- a tiny Mac app (`player/`) the extension uses to draw the mini player over the tab sidebar
 - [Karabiner-Elements](https://karabiner-elements.pqrs.org) rule: turns ⌃Tab into keys the extension can use
 - Chrome Launcher app: starts Chrome with launch flags so typed words + Enter go to the page you visited
 - macOS App Shortcuts: ⌘S hides/shows the tab sidebar, ⌥⌘↓/↑ move through the tab list
@@ -37,7 +38,7 @@ Use this repository's clone URL from its GitHub page (Code → HTTPS), for examp
 git clone https://github.com/YOUR-GITHUB-USERNAME/erics-arc-for-chrome.git ~/dev/erics-arc-for-chrome
 ```
 
-**2. Run the setup script.** It sets the Chrome menu shortcuts (⌘S, ⌥⌘↓/↑), installs Karabiner-Elements (asks for your password) with the ⌃Tab rule, and installs Chrome Launcher with a login item and a Dock icon. Safe to re-run.
+**2. Run the setup script.** It sets the Chrome menu shortcuts (⌘S, ⌥⌘↓/↑), installs Karabiner-Elements (asks for your password) with the ⌃Tab rule, installs Chrome Launcher with a login item and a Dock icon, and builds the sidebar mini player (needs the Xcode command line tools: `xcode-select --install`). Safe to re-run.
 
 ```bash
 ~/dev/erics-arc-for-chrome/setup.sh
@@ -117,6 +118,12 @@ Small throwaway windows for quick lookups. They're Chrome popup windows: no tab 
 - **⇧⌘O** or **▾**: pick a window or tab group to move it into.
 - Little Arcs left unfocused for 12 hours close themselves. Size and position are remembered.
 
+### Sidebar mini player
+
+While a music site has a track loaded and you're on another tab, a small player sits at the bottom of the tab sidebar, like Arc's: artwork, title, artist, ⏮ ⏯ ⏭. Click the track to go to its tab. × hides it until you've been back to the music tab and left again. It hides when you're on the music tab, when the sidebar is collapsed (⌘S) and when Chrome isn't in front. On those sites it also stops Chrome popping the site's own mini player out into a floating window when you switch tabs (their pop-out button still works). Sites: Spotify, YouTube Music, SoundCloud, Apple Music, Tidal, Bandcamp, Pandora, Amazon Music, Deezer (add more in `manifest.json`, both `music.js` entries).
+
+Chrome doesn't let extensions draw in its tab strip, so the player is a small Mac app (`player/ArcPlayer.swift`) floating over the sidebar. Chrome starts it while there's music and it quits when there isn't; `setup.sh` builds and registers it (`player/install.sh`; re-run it if you move this folder). It covers the last couple of tabs in a long list, and trails a little behind when you drag the window.
+
 ### Address bar goes to the page you visited
 
 Typing words and pressing Enter opens the page from your history that matches them (`acme/commits` → github.com/acme-corp/app/commits), like Arc's command bar. Chrome only allows this with `--enable-features=OmniboxForceAllowedToBeDefault`, which isn't on `chrome://flags`, so Chrome Launcher passes it at startup. Searches you've made before can still outrank pages for the same words.
@@ -142,7 +149,7 @@ Nothing to set up: Chrome's own split view covers it. Drag a tab to the left, ri
 ~/dev/erics-arc-for-chrome/uninstall.sh
 ```
 
-It removes Chrome Launcher (app, login item, Dock icon), this project's two Chrome App Shortcuts (your other App Shortcuts stay) and its Karabiner rule (Karabiner stays installed). Then remove the extension in `chrome://extensions` and quit and reopen Chrome.
+It removes Chrome Launcher (app, login item, Dock icon), the mini player's registration with Chrome, this project's two Chrome App Shortcuts (your other App Shortcuts stay) and its Karabiner rule (Karabiner stays installed). Then remove the extension in `chrome://extensions` and quit and reopen Chrome.
 
 ## Test
 

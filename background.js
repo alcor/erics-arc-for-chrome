@@ -232,7 +232,7 @@ chrome.windows.onFocusChanged.addListener(async windowId => {
   if (tab) activated(tab.id);
 });
 
-importScripts('little-arc.js');
+importScripts('little-arc.js', 'player.js');
 
 chrome.action.onClicked.addListener(reset);
 
