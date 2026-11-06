@@ -3,12 +3,20 @@
 //   --host          native messaging host, spawned by Chrome for the extension (Host.swift)
 //   --make-default  ask macOS to make this the default browser (a system dialog), then quit
 //   --unregister    remove the login item, then quit
+//   --demo          show the ⌃Tab switcher with sample tabs, to look at it (nothing else runs); prints
+//                   the panel's rectangle on stderr for screencapture -R
 import AppKit
 import ServiceManagement
 
 switch CommandLine.arguments.dropFirst().first {
 case "--host":
   Host.run()
+case "--demo":
+  let app = NSApplication.shared
+  app.setActivationPolicy(.accessory)
+  let switcher = Switcher()
+  switcher.demo()
+  app.run()
 case "--unregister":
   try? SMAppService.mainApp.unregister()
   exit(0)

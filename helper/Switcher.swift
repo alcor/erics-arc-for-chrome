@@ -1,143 +1,245 @@
-// The ⌃Tab switcher: a floating panel over Chrome's front window with the recently used tabs, most
-// recent first, a thumbnail, favicon and title each, like ⌘Tab for tabs. ⌃Tab moves the highlight on,
+// The ⌃Tab switcher: a Liquid Glass panel over Chrome's front window with the recently used tabs, most
+// recent first, a thumbnail each with its favicon, like ⌘Tab for tabs. ⌃Tab moves the highlight on,
 // ⌃⇧Tab back, Esc cancels, and letting go of Control activates the highlighted tab. A quick ⌃Tab that
 // lets go before the panel would appear just switches, so the panel only shows up when you hold.
 //
 // The extension owns the list (it has the events) and sends it over the bridge whenever it changes,
 // with a thumbnail per tab captured the last time that tab was in front; this side only draws. Nothing
 // switches live while you walk, only the pick does.
+//
+// The surface follows Quicksilver's: a borderless non-activating panel with no shadow of its own, larger
+// than the card so SwiftUI's shadows have room, and the card as clear glass on a continuous rounded
+// shape with a tint, a hairline, and two shadows. The highlight is regular glass with a white tint.
 import AppKit
+import SwiftUI
 
 struct TabInfo {
   let id: Int, windowId: Int, title: String
   let favicon: NSImage?
 }
 
+final class SwitcherModel: ObservableObject {
+  @Published var walk: [TabInfo] = []
+  @Published var thumbs: [Int: NSImage] = [:]
+  @Published var index = 0
+  @Published var offset = 0
+  @Published var visible = Switcher.maxVisible
+
+  var shown: ArraySlice<TabInfo> { walk[min(offset, walk.count)..<min(offset + visible, walk.count)] }
+}
+
 final class Switcher {
-  static let card = NSSize(width: 176, height: 110), gap: CGFloat = 12, pad: CGFloat = 16, titleHeight: CGFloat = 36
+  static let thumb = CGSize(width: 176, height: 110), gap: CGFloat = 10, pad: CGFloat = 16, cardPad: CGFloat = 8
+  static let labelHeight: CGFloat = 26, radius: CGFloat = 28, shadowRoom: CGFloat = 70
   static let showAfter = 0.15, maxVisible = 6
 
   var tabs: [TabInfo] = []
-  var thumbs: [Int: NSImage] = [:]
+  var thumbs: [Int: NSImage] {
+    get { model.thumbs }
+    set { model.thumbs = newValue }
+  }
   var onActivate: (Int) -> Void = { _ in }
 
-  private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-  private let backdrop = NSVisualEffectView()
-  private var walk: [TabInfo] = []
-  private var index = 0, offset = 0
+  private let model = SwitcherModel()
+  private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+                              backing: .buffered, defer: false)
+  private let hosting: NSHostingView<SwitcherView>
   private var showTimer: Timer?
 
-  var isWalking: Bool { !walk.isEmpty }
+  var isWalking: Bool { !model.walk.isEmpty }
 
   init() {
-    panel.level = .popUpMenu
+    panel.level = .floating
     panel.isOpaque = false
     panel.backgroundColor = .clear
-    panel.hasShadow = true
+    panel.hasShadow = false // the card draws its own, inside the panel
     panel.hidesOnDeactivate = false
+    panel.ignoresMouseEvents = true
     panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-    backdrop.material = .hudWindow
-    backdrop.blendingMode = .behindWindow
-    backdrop.state = .active
-    backdrop.wantsLayer = true
-    backdrop.layer?.cornerRadius = 14
-    backdrop.layer?.masksToBounds = true
-    panel.contentView = backdrop
+    hosting = NSHostingView(rootView: SwitcherView(model: model))
+    panel.contentView = hosting
   }
 
   func step(back: Bool) {
-    if walk.isEmpty {
+    if model.walk.isEmpty {
       guard tabs.count > 1 else { return }
-      walk = tabs
-      index = 0
-      offset = 0
+      model.walk = tabs
+      model.index = 0
+      model.offset = 0
       showTimer = Timer.scheduledTimer(withTimeInterval: Self.showAfter, repeats: false) { [weak self] _ in self?.show() }
     }
-    index = (index + (back ? -1 : 1) + walk.count) % walk.count
-    if panel.isVisible { render() }
+    model.index = (model.index + (back ? -1 : 1) + model.walk.count) % model.walk.count
+    if panel.isVisible { place() }
   }
 
   func controlUp() {
     guard isWalking else { return }
-    let pick = walk[index]
+    let pick = model.walk[model.index]
     hide()
     onActivate(pick.id)
   }
 
   func cancel() { hide() }
 
-  func forget(tab id: Int) { thumbs[id] = nil }
+  func forget(tab id: Int) { model.thumbs[id] = nil }
+
+  // --demo: the panel with sample tabs, to look at.
+  func demo() {
+    let colors: [NSColor] = [.systemBlue, .systemOrange, .systemGreen, .systemPink, .systemTeal, .systemIndigo, .systemBrown]
+    tabs = ["Eric's Arc for Chrome", "Liquid Glass | Apple Developer Documentation", "Inbox (3) - Gmail", "Figma", "Hacker News",
+            "Chrome Extensions: chrome.tabs", "YouTube"].enumerated().map { i, title in
+      let favicon = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
+        colors[i].setFill(); NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill(); return true
+      }
+      return TabInfo(id: i, windowId: 1, title: title, favicon: favicon)
+    }
+    for i in 0..<5 {
+      model.thumbs[i] = NSImage(size: NSSize(width: 480, height: 300), flipped: false) { rect in
+        NSGradient(starting: colors[i].blended(withFraction: 0.7, of: .white)!, ending: .white)!.draw(in: rect, angle: -70)
+        NSColor.black.withAlphaComponent(0.12).setFill()
+        for row in 0..<7 { NSRect(x: 30, y: 250 - CGFloat(row) * 34, width: CGFloat(260 + row * 23 % 170), height: 12).fill() }
+        return true
+      }
+    }
+    step(back: false)
+    step(back: false)
+    // The panel's screen rectangle, top-left origin, for screencapture -R.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
+      let f = panel.frame, top = (NSScreen.screens.first?.frame.height ?? 0) - f.maxY
+      FileHandle.standardError.write(Data("panel \(Int(f.minX)),\(Int(top)),\(Int(f.width)),\(Int(f.height))\n".utf8))
+    }
+  }
 
   private func show() {
     guard isWalking else { return }
-    render()
+    place()
     panel.orderFrontRegardless()
   }
 
   private func hide() {
     showTimer?.invalidate()
     showTimer = nil
-    walk = []
+    model.walk = []
     panel.orderOut(nil)
   }
 
-  private func render() {
-    let screen = Chrome.frontWindowFrame.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(frame) } } ?? NSScreen.main
-    let fit = Int(((screen?.visibleFrame.width ?? 1200) - 2 * Self.pad - 80 + Self.gap) / (Self.card.width + Self.gap))
-    let visible = max(2, min(Self.maxVisible, fit, walk.count))
-    if index < offset { offset = index }
-    if index >= offset + visible { offset = index - visible + 1 }
-    let shown = Array(walk[offset..<min(offset + visible, walk.count)])
-
-    let width = CGFloat(shown.count) * Self.card.width + CGFloat(shown.count - 1) * Self.gap + 2 * Self.pad
-    let height = Self.card.height + Self.titleHeight + 2 * Self.pad
-    backdrop.subviews.forEach { $0.removeFromSuperview() }
-    for (i, tab) in shown.enumerated() {
-      let x = Self.pad + CGFloat(i) * (Self.card.width + Self.gap)
-      backdrop.addSubview(cardView(tab, selected: offset + i == index, at: NSPoint(x: x, y: Self.pad)))
-    }
-
-    let anchor = Chrome.frontWindowFrame ?? screen?.visibleFrame ?? .zero
-    let origin = NSPoint(x: anchor.midX - width / 2, y: anchor.midY - height / 2)
-    panel.setFrame(NSRect(origin: origin, size: NSSize(width: width, height: height)), display: true)
+  static func cardSize(count: Int) -> CGSize {
+    CGSize(width: CGFloat(count) * (thumb.width + 2 * cardPad) + CGFloat(count - 1) * gap + 2 * pad,
+           height: thumb.height + labelHeight + 2 * cardPad + 2 * pad)
   }
 
-  private func cardView(_ tab: TabInfo, selected: Bool, at origin: NSPoint) -> NSView {
-    let inset: CGFloat = 6
-    let view = NSView(frame: NSRect(origin: NSPoint(x: origin.x - inset, y: origin.y - inset),
-                                    size: NSSize(width: Self.card.width + 2 * inset, height: Self.card.height + Self.titleHeight + 2 * inset)))
-    view.wantsLayer = true
-    view.layer?.cornerRadius = 10
-    if selected { view.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor }
+  // Fits the visible run to the screen, keeps the highlight in it, and centers the card on Chrome's window.
+  private func place() {
+    let anchor = Chrome.frontWindowFrame
+    let screen = anchor.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(frame) } } ?? NSScreen.main
+    let width = screen?.visibleFrame.width ?? 1200
+    let fit = Int((width - 2 * Self.pad - 60 + Self.gap) / (Self.thumb.width + 2 * Self.cardPad + Self.gap))
+    model.visible = max(2, min(Self.maxVisible, fit, model.walk.count))
+    if model.index < model.offset { model.offset = model.index }
+    if model.index >= model.offset + model.visible { model.offset = model.index - model.visible + 1 }
 
-    let thumb = NSImageView(frame: NSRect(x: inset, y: inset + Self.titleHeight, width: Self.card.width, height: Self.card.height))
-    thumb.wantsLayer = true
-    thumb.layer?.cornerRadius = 6
-    thumb.layer?.masksToBounds = true
-    thumb.layer?.backgroundColor = NSColor.windowBackgroundColor.withAlphaComponent(0.5).cgColor
-    thumb.imageScaling = .scaleProportionallyUpOrDown
-    thumb.imageAlignment = .alignTop
-    if let image = thumbs[tab.id] {
-      thumb.image = image
-    } else if let favicon = tab.favicon {
-      let big = NSImageView(frame: NSRect(x: (Self.card.width - 32) / 2, y: (Self.card.height - 32) / 2, width: 32, height: 32))
-      big.image = favicon
-      big.imageScaling = .scaleProportionallyUpOrDown
-      thumb.addSubview(big)
+    let card = Self.cardSize(count: model.shown.count)
+    let size = NSSize(width: card.width + 2 * Self.shadowRoom, height: card.height + 2 * Self.shadowRoom)
+    let center = anchor.map { NSPoint(x: $0.midX, y: $0.midY) } ?? screen.map { NSPoint(x: $0.visibleFrame.midX, y: $0.visibleFrame.midY) } ?? .zero
+    hosting.frame = NSRect(origin: .zero, size: size)
+    panel.setFrame(NSRect(x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height), display: true)
+  }
+}
+
+struct SwitcherView: View {
+  @ObservedObject var model: SwitcherModel
+  @Environment(\.colorScheme) private var colorScheme
+  private var isDark: Bool { colorScheme == .dark }
+
+  var body: some View {
+    let shape = RoundedRectangle(cornerRadius: Switcher.radius, style: .continuous)
+    let shown = Array(model.shown)
+    HStack(spacing: Switcher.gap) {
+      ForEach(Array(shown.enumerated()), id: \.element.id) { i, tab in
+        TabCard(tab: tab, thumb: model.thumbs[tab.id], selected: model.offset + i == model.index)
+      }
     }
-    view.addSubview(thumb)
+    .padding(Switcher.pad)
+    .background {
+      ZStack {
+        if #available(macOS 26, *) {
+          shape.fill(.clear).glassEffect(.clear, in: shape)
+        } else {
+          shape.fill(.ultraThinMaterial)
+        }
+        tint(shape)
+        shape.strokeBorder(.white.opacity(isDark ? 0.14 : 0.3), lineWidth: 1.25)
+      }
+    }
+    .clipShape(shape)
+    .shadow(color: .black.opacity(0.28), radius: 36, y: 22)
+    .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
 
-    let favicon = NSImageView(frame: NSRect(x: inset + 4, y: inset + 10, width: 16, height: 16))
-    favicon.image = tab.favicon
-    favicon.imageScaling = .scaleProportionallyUpOrDown
-    view.addSubview(favicon)
+  @ViewBuilder private func tint(_ shape: RoundedRectangle) -> some View {
+    if isDark {
+      shape.fill(LinearGradient(stops: [.init(color: .black.opacity(0.25), location: 0), .init(color: .black.opacity(0.45), location: 1)],
+                                startPoint: .top, endPoint: .bottom))
+    } else {
+      shape.fill(LinearGradient(stops: [.init(color: .white.opacity(0), location: 0), .init(color: .white.opacity(0.33), location: 0.99)],
+                                startPoint: .top, endPoint: .bottom))
+      shape.fill(LinearGradient(stops: [.init(color: .white.opacity(0.5), location: 0.0097), .init(color: .white.opacity(0), location: 0.488)],
+                                startPoint: UnitPoint(x: 0.58, y: 0), endPoint: UnitPoint(x: 0.42, y: 1)))
+    }
+  }
+}
 
-    let title = NSTextField(labelWithString: tab.title)
-    title.frame = NSRect(x: inset + 26, y: inset + 8, width: Self.card.width - 30, height: 20)
-    title.font = .systemFont(ofSize: 12, weight: selected ? .semibold : .regular)
-    title.lineBreakMode = .byTruncatingTail
-    title.textColor = .labelColor
-    view.addSubview(title)
-    return view
+// A thumbnail with its favicon in the corner; the title only under the highlighted one, as ⌘Tab labels
+// only the selected app.
+private struct TabCard: View {
+  let tab: TabInfo
+  let thumb: NSImage?
+  let selected: Bool
+  @Environment(\.colorScheme) private var colorScheme
+
+  var body: some View {
+    let well = RoundedRectangle(cornerRadius: 16, style: .continuous)
+    let frame = RoundedRectangle(cornerRadius: 9, style: .continuous)
+    VStack(spacing: 6) {
+      ZStack(alignment: .bottomLeading) {
+        Group {
+          if let thumb {
+            Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill)
+          } else {
+            ZStack {
+              Color.primary.opacity(0.06)
+              if let favicon = tab.favicon { Image(nsImage: favicon).resizable().frame(width: 36, height: 36) }
+            }
+          }
+        }
+        .frame(width: Switcher.thumb.width, height: Switcher.thumb.height, alignment: .top)
+        .clipShape(frame)
+        .overlay(frame.strokeBorder(.primary.opacity(0.12), lineWidth: 0.5))
+        if let favicon = tab.favicon, thumb != nil {
+          Image(nsImage: favicon).resizable().frame(width: 16, height: 16)
+            .padding(4)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
+            .padding(6)
+        }
+      }
+      Text(tab.title)
+        .font(.system(size: 12, weight: .medium))
+        .lineLimit(1)
+        .truncationMode(.tail)
+        .frame(width: Switcher.thumb.width, height: Switcher.labelHeight - 6)
+        .opacity(selected ? 1 : 0)
+    }
+    .padding(Switcher.cardPad)
+    .background {
+      if selected {
+        let tint: Color = colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.4)
+        if #available(macOS 26, *) {
+          well.fill(.clear).glassEffect(.regular.tint(tint), in: well)
+        } else {
+          well.fill(tint)
+        }
+      }
+    }
   }
 }
