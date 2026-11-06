@@ -3,6 +3,9 @@
 // the login item and owns the event tap and the panels. They meet on a Unix socket the app listens on,
 // one JSON object per line in each direction. The host is a relay and understands none of it.
 import Foundation
+import os
+
+let log = Logger(subsystem: "local.arc-for-chrome", category: "helper")
 
 enum Socket {
   static var path: String {

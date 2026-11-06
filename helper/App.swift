@@ -26,8 +26,10 @@ final class App: NSObject, NSApplicationDelegate {
     player.onAction = { [weak self] action in self?.send(["player": ["action": action]]) }
 
     server = SocketServer(path: Socket.path, queue: .main)
+    if server == nil { log.error("socket: could not listen at \(Socket.path)") }
     server?.onConnection = { [weak self] peer in
       guard let self else { return }
+      log.info("host: connected")
       host?.stop()
       host = peer
       peer.onLine = { [weak self] line in
@@ -35,11 +37,15 @@ final class App: NSObject, NSApplicationDelegate {
         self?.receive(message)
       }
       peer.onClose = { [weak self] in
+        log.info("host: disconnected")
         if self?.host === peer { self?.host = nil; self?.player.apply(nil) }
       }
     }
 
-    whenTrusted { [weak self] in _ = self?.tap.install() }
+    whenTrusted { [weak self] in
+      let installed = self?.tap.install() ?? false
+      log.info("tap: \(installed ? "installed" : "could not be created")")
+    }
     if Chrome.running == nil { Chrome.open(activate: false) } else { Chrome.warnIfStartedWithoutFlags() }
   }
 
@@ -74,12 +80,14 @@ final class App: NSObject, NSApplicationDelegate {
       session = now
     }
     if let mru = message["mru"] as? [[String: Any]] {
+      log.info("mru: \(mru.count) tabs")
       switcher.tabs = mru.compactMap { tab in
         guard let id = tab["id"] as? Int, let windowId = tab["windowId"] as? Int else { return nil }
         return TabInfo(id: id, windowId: windowId, title: tab["title"] as? String ?? "", favicon: image(tab["favicon"] as? String))
       }
     }
     if let thumb = message["thumb"] as? [String: Any], let id = thumb["id"] as? Int, let image = image(thumb["data"] as? String) {
+      log.info("thumb: tab \(id)")
       switcher.thumbs[id] = image
     }
     if let closed = message["closed"] as? Int { switcher.forget(tab: closed) }
@@ -102,6 +110,7 @@ final class App: NSObject, NSApplicationDelegate {
   func whenTrusted(_ then: @escaping () -> Void) {
     let prompt = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
     if AXIsProcessTrustedWithOptions(prompt) { return then() }
+    log.info("accessibility: not granted yet, waiting")
     Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { timer in
       if AXIsProcessTrusted() {
         timer.invalidate()

@@ -5,6 +5,9 @@
 //   --unregister    remove the login item, then quit
 //   --demo          show the ⌃Tab switcher with sample tabs, to look at it (nothing else runs); prints
 //                   the panel's rectangle on stderr for screencapture -R
+//   --status        whether the app half is up and the extension's host is connected
+// Log: log stream --info --predicate 'subsystem == "local.arc-for-chrome"' (Accessibility shows there; asking
+// from a shell would report the terminal's grant, not the app's)
 import AppKit
 import ServiceManagement
 
@@ -17,6 +20,10 @@ case "--demo":
   let switcher = Switcher()
   switcher.demo()
   app.run()
+case "--status":
+  print("app:", NSRunningApplication.runningApplications(withBundleIdentifier: App.bundleId).isEmpty ? "not running" : "running")
+  print("host:", Socket.connect(Socket.path).map { close($0); return "socket up" } ?? "socket down")
+  exit(0)
 case "--unregister":
   try? SMAppService.mainApp.unregister()
   exit(0)
