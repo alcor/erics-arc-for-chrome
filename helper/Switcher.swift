@@ -7,9 +7,10 @@
 // with a thumbnail per tab captured the last time that tab was in front; this side only draws. Nothing
 // switches live while you walk, only the pick does.
 //
-// The surface follows Quicksilver's: a borderless non-activating panel with no shadow of its own, larger
-// than the card so SwiftUI's shadows have room, and the card as clear glass on a continuous rounded
-// shape with a tint, a hairline, and two shadows. The highlight is regular glass with a white tint.
+// The layout is Arc's switcher: a row of thumbnails, each with its favicon and title underneath, the
+// highlighted one on a tinted well. The surface follows Quicksilver's: a borderless non-activating panel
+// with no shadow of its own, larger than the card so SwiftUI's shadows have room, and the card as Liquid
+// Glass on a continuous rounded shape with a hairline and two shadows.
 import AppKit
 import SwiftUI
 
@@ -29,9 +30,9 @@ final class SwitcherModel: ObservableObject {
 }
 
 final class Switcher {
-  static let thumb = CGSize(width: 176, height: 110), gap: CGFloat = 10, pad: CGFloat = 16, cardPad: CGFloat = 8
-  static let labelHeight: CGFloat = 26, radius: CGFloat = 28, shadowRoom: CGFloat = 70
-  static let showAfter = 0.15, maxVisible = 6
+  static let thumb = CGSize(width: 224, height: 144), gap: CGFloat = 8, pad: CGFloat = 14, cardPad: CGFloat = 10
+  static let labelHeight: CGFloat = 34, radius: CGFloat = 26, shadowRoom: CGFloat = 70
+  static let showAfter = 0.15, maxVisible = 5
 
   var tabs: [TabInfo] = []
   var thumbs: [Int: NSImage] {
@@ -133,7 +134,7 @@ final class Switcher {
     let anchor = Chrome.frontWindowFrame
     let screen = anchor.flatMap { frame in NSScreen.screens.first { $0.frame.intersects(frame) } } ?? NSScreen.main
     let width = screen?.visibleFrame.width ?? 1200
-    let fit = Int((width - 2 * Self.pad - 60 + Self.gap) / (Self.thumb.width + 2 * Self.cardPad + Self.gap))
+    let fit = Int((width - 2 * Self.pad - 80 + Self.gap) / (Self.thumb.width + 2 * Self.cardPad + Self.gap))
     model.visible = max(2, min(Self.maxVisible, fit, model.walk.count))
     if model.index < model.offset { model.offset = model.index }
     if model.index >= model.offset + model.visible { model.offset = model.index - model.visible + 1 }
@@ -163,11 +164,10 @@ struct SwitcherView: View {
     .background {
       ZStack {
         if #available(macOS 26, *) {
-          shape.fill(.clear).glassEffect(.clear, in: shape)
+          shape.fill(.clear).glassEffect(.regular, in: shape)
         } else {
-          shape.fill(.ultraThinMaterial)
+          shape.fill(.regularMaterial)
         }
-        tint(shape)
         shape.strokeBorder(.white.opacity(isDark ? 0.14 : 0.3), lineWidth: 1.25)
       }
     }
@@ -177,21 +177,10 @@ struct SwitcherView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 
-  @ViewBuilder private func tint(_ shape: RoundedRectangle) -> some View {
-    if isDark {
-      shape.fill(LinearGradient(stops: [.init(color: .black.opacity(0.25), location: 0), .init(color: .black.opacity(0.45), location: 1)],
-                                startPoint: .top, endPoint: .bottom))
-    } else {
-      shape.fill(LinearGradient(stops: [.init(color: .white.opacity(0), location: 0), .init(color: .white.opacity(0.33), location: 0.99)],
-                                startPoint: .top, endPoint: .bottom))
-      shape.fill(LinearGradient(stops: [.init(color: .white.opacity(0.5), location: 0.0097), .init(color: .white.opacity(0), location: 0.488)],
-                                startPoint: UnitPoint(x: 0.58, y: 0), endPoint: UnitPoint(x: 0.42, y: 1)))
-    }
-  }
 }
 
-// A thumbnail with its favicon in the corner; the title only under the highlighted one, as ⌘Tab labels
-// only the selected app.
+// A thumbnail with its favicon and title underneath, as Arc lays them out; the highlighted one sits on a
+// well of regular glass tinted with the accent color.
 private struct TabCard: View {
   let tab: TabInfo
   let thumb: NSImage?
@@ -199,41 +188,38 @@ private struct TabCard: View {
   @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
-    let well = RoundedRectangle(cornerRadius: 16, style: .continuous)
-    let frame = RoundedRectangle(cornerRadius: 9, style: .continuous)
-    VStack(spacing: 6) {
-      ZStack(alignment: .bottomLeading) {
-        Group {
-          if let thumb {
-            Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill)
-          } else {
-            ZStack {
-              Color.primary.opacity(0.06)
-              if let favicon = tab.favicon { Image(nsImage: favicon).resizable().frame(width: 36, height: 36) }
-            }
+    let well = RoundedRectangle(cornerRadius: 18, style: .continuous)
+    let frame = RoundedRectangle(cornerRadius: 10, style: .continuous)
+    VStack(alignment: .leading, spacing: 8) {
+      Group {
+        if let thumb {
+          Image(nsImage: thumb).resizable().aspectRatio(contentMode: .fill)
+        } else {
+          ZStack {
+            Color.primary.opacity(0.06)
+            if let favicon = tab.favicon { Image(nsImage: favicon).resizable().frame(width: 40, height: 40) }
           }
         }
-        .frame(width: Switcher.thumb.width, height: Switcher.thumb.height, alignment: .top)
-        .clipShape(frame)
-        .overlay(frame.strokeBorder(.primary.opacity(0.12), lineWidth: 0.5))
-        if let favicon = tab.favicon, thumb != nil {
-          Image(nsImage: favicon).resizable().frame(width: 16, height: 16)
-            .padding(4)
-            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(nsColor: .windowBackgroundColor)))
-            .padding(6)
-        }
       }
-      Text(tab.title)
-        .font(.system(size: 12, weight: .medium))
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .frame(width: Switcher.thumb.width, height: Switcher.labelHeight - 6)
-        .opacity(selected ? 1 : 0)
+      .frame(width: Switcher.thumb.width, height: Switcher.thumb.height, alignment: .top)
+      .clipShape(frame)
+      .overlay(frame.strokeBorder(.primary.opacity(0.12), lineWidth: 0.5))
+      HStack(spacing: 8) {
+        if let favicon = tab.favicon {
+          Image(nsImage: favicon).resizable().frame(width: 22, height: 22)
+            .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+        Text(tab.title)
+          .font(.system(size: 15, weight: .medium))
+          .lineLimit(1)
+          .truncationMode(.tail)
+      }
+      .frame(width: Switcher.thumb.width, height: Switcher.labelHeight - 8, alignment: .leading)
     }
     .padding(Switcher.cardPad)
     .background {
       if selected {
-        let tint: Color = colorScheme == .dark ? .white.opacity(0.12) : .white.opacity(0.4)
+        let tint = Color.accentColor.opacity(colorScheme == .dark ? 0.35 : 0.3)
         if #available(macOS 26, *) {
           well.fill(.clear).glassEffect(.regular.tint(tint), in: well)
         } else {
