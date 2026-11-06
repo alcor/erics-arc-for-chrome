@@ -401,12 +401,13 @@ await close(song);
 assert.equal(await sw.evaluate(id => music.has(id), song), false);
 console.log('mini player: track info and buttons: ok');
 
-// The helper (if built: player/install.sh) reads a message that arrives in pieces, stays up, and quits
-// when Chrome closes the connection.
-const helper = path.join(ext, 'player/ArcPlayer');
-if (fs.existsSync(helper)) {
-  const p = spawn(helper, [], { stdio: ['pipe', 'ignore', 'inherit'] });
-  const body = Buffer.from(JSON.stringify({ show: false, title: 'Song' }));
+// The helper's host role (if built: helper/install.sh) reads a message that arrives in pieces, stays up
+// without the app half, and quits when Chrome closes the connection.
+const helperBinary = path.join(ext, 'helper/build/Arc for Chrome.app/Contents/MacOS/ArcHelper');
+if (fs.existsSync(helperBinary)) {
+  const p = spawn(helperBinary, ['--host'], { stdio: ['pipe', 'ignore', 'inherit'],
+    env: { ...process.env, ARC_HELPER_SOCKET: path.join(profile, 'no.sock'), ARC_HELPER_NO_LAUNCH: '1' } });
+  const body = Buffer.from(JSON.stringify({ mru: [] }));
   const header = Buffer.alloc(4);
   header.writeUInt32LE(body.length);
   const frame = Buffer.concat([header, body]);
@@ -417,8 +418,8 @@ if (fs.existsSync(helper)) {
   assert.equal(p.exitCode, null);
   p.stdin.end();
   assert.equal(await new Promise(r => p.on('exit', r)), 0);
-  console.log('mini player: helper reads messages, quits with Chrome: ok');
-} else console.log('mini player: helper: skipped (run player/install.sh)');
+  console.log('helper: host reads messages, quits with Chrome: ok');
+} else console.log('helper: host: skipped (run helper/install.sh)');
 
 await ctx.close();
 server.close();

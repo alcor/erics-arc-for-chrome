@@ -26,6 +26,13 @@
     chrome.runtime.sendMessage({ little, url: a.href });
   }, true);
 
+  // The ⌃Tab switcher's thumbnail of this tab is retaken after a scroll, so it shows where you left off.
+  let scrollTimer = null;
+  if (window === top) addEventListener('scroll', () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => chrome.runtime.sendMessage({ scrolled: true }).catch(() => {}), 300);
+  }, { passive: true });
+
   // window.open in a locked tab, relayed from the page's world by little-open.js.
   addEventListener('message', e => {
     if (e.source === window && typeof e.data?.ericsArcPeek === 'string') chrome.runtime.sendMessage({ little: 'peek', url: e.data.ericsArcPeek });

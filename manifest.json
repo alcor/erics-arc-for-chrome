@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Eric's Arc for Chrome",
-  "version": "2.4",
+  "version": "3.0",
   "description": "Arc features for Chrome's built-in tab bar.",
   "minimum_chrome_version": "121",
-  "permissions": ["tabs", "tabGroups", "storage", "webNavigation", "scripting", "search", "alarms", "nativeMessaging"],
+  "permissions": ["tabs", "tabGroups", "storage", "webNavigation", "scripting", "search", "alarms", "nativeMessaging", "favicon"],
   "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
@@ -34,14 +34,14 @@
     },
     "recent-next": {
       "suggested_key": { "mac": "MacCtrl+Period", "default": "Ctrl+Period" },
-      "description": "Recently used tab: start (Karabiner sends this for the first Ctrl+Tab)"
+      "description": "Recently used tab: start (the helper sends this for the first Ctrl+Tab)"
     },
     "recent-continue": {
-      "description": "Recently used tab: keep going (Karabiner sends Ctrl+Shift+Period for more Ctrl+Tabs)"
+      "description": "Recently used tab: keep going (the helper sends Ctrl+Shift+Period for more Ctrl+Tabs)"
     },
     "recent-prev": {
       "suggested_key": { "mac": "MacCtrl+Comma", "default": "Ctrl+Comma" },
-      "description": "Recently used tab: step back (Karabiner sends this for Ctrl+Shift+Tab)"
+      "description": "Recently used tab: step back (the helper sends this for Ctrl+Shift+Tab)"
     },
     "little-new": {
       "description": "New Little Arc (set its scope to Global)"

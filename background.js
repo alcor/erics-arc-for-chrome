@@ -169,7 +169,7 @@ async function closeTabs() {
 // Recent tabs, Arc-style: ⌃Tab walks through tabs in every window, most recently used first, for as
 // long as Control is held; letting go of Control ends the walk, so the next ⌃Tab goes back to the tab
 // you came from. Chrome won't give extensions the Tab key or tell them when Control is released, so
-// Karabiner (karabiner/ctrl-tab.json) sends:
+// the helper's event tap (helper/Tap.swift) sends:
 //   ⌃.  first ⌃Tab since Control went down: start a new walk (recent-next)
 //   ⌃⇧. more ⌃Tabs with Control still held: keep walking (recent-continue)
 //   ⌃,  ⌃⇧Tab: walk back one step (recent-prev)
@@ -190,6 +190,7 @@ async function touch(tabId, at = 0) {
   const list = (await mruList()).filter(id => id !== tabId);
   list.splice(at, 0, tabId);
   await chrome.storage.session.set({ mru: list });
+  helperMruSoon();
 }
 
 // A walk ends when the next one starts or you go to a tab some other way; only then does the tab it
@@ -241,7 +242,7 @@ chrome.windows.onFocusChanged.addListener(async windowId => {
   if (tab) activated(tab.id);
 });
 
-importScripts('little-arc.js', 'player.js');
+importScripts('little-arc.js', 'player.js', 'helper.js');
 
 chrome.action.onClicked.addListener(reset);
 

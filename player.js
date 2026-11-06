@@ -1,16 +1,15 @@
 // Sidebar mini player, like Arc's: while a music site (music.js) has a track loaded and you're on
 // another tab, a small player with play/pause, next and previous sits over the bottom of the vertical
-// tab sidebar; clicking the track goes to its tab, and × hides it until you've been back to that tab. Chrome doesn't let extensions draw in its tab
-// strip, so the player is a tiny Mac app (player/ArcPlayer.swift) floating over it. Chrome starts it
-// through native messaging while there's music, and it quits when the connection closes.
+// tab sidebar; clicking the track goes to its tab, and × hides it until you've been back to that tab.
+// Chrome doesn't let extensions draw in its tab strip, so the player is a panel of the helper app
+// (helper/Player.swift) floating over it, told what to show over the helper's port (helper.js).
 //
 // The sidebar's width is the window's minus the page's.
 // ponytail: a side panel open on the right also counts as sidebar, so the player gets too wide.
 
-const PLAYER_HOST = 'erics_arc_player';
 const PLAYER_MIN_SIDEBAR = 150; // narrower than this, the sidebar is collapsed (⌘S): no player
 const music = new Map(); // tabId -> { title, artist, artwork }
-let player = null, playerSent = '', playerFailedAt = 0, playerTab = null, lastPlayed = null, playerClosed = null;
+let playerSent = '', playerTab = null, lastPlayed = null, playerClosed = null;
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
   if (!('music' in msg) || !sender.tab) return;
@@ -44,27 +43,12 @@ async function playerState() {
 
 async function playerSync() {
   const state = await playerState();
-  if (!state) {
-    playerTab = null;
-    player?.disconnect();
-    player = null;
-    return;
-  }
-  if (!player) {
-    if (Date.now() - playerFailedAt < 60_000) return; // helper not installed or crashed: don't respawn every 500ms
-    player = chrome.runtime.connectNative(PLAYER_HOST);
-    playerSent = '';
-    player.onMessage.addListener(playerAction);
-    player.onDisconnect.addListener(() => {
-      console.warn('mini player stopped:', chrome.runtime.lastError?.message);
-      player = null;
-      playerFailedAt = Date.now();
-    });
-  }
+  if (!state) playerTab = null;
   const json = JSON.stringify(state);
-  if (json !== playerSent) player.postMessage(state);
+  if (json !== playerSent) helperSend({ player: state });
   playerSent = json;
 }
+const playerResend = () => { playerSent = ''; playerUpdate(); };
 
 let playerQueue = Promise.resolve();
 const playerUpdate = () => (playerQueue = playerQueue.then(playerSync).catch(console.error));

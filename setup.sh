@@ -1,6 +1,6 @@
 #!/bin/sh
 # Sets up everything on this Mac that can be scripted. Safe to re-run. The README lists the steps
-# that need clicks (loading the extension, its shortcuts, Karabiner's driver approval).
+# that need clicks (loading the extension, its shortcuts, allowing the helper's Accessibility).
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 
@@ -15,44 +15,49 @@ defaults write com.google.Chrome NSUserKeyEquivalents -dict-add \
   "Save Page As…" '@$s' \
   "Select Next Tab" "$(printf '@~\357\234\201')" \
   "Select Previous Tab" "$(printf '@~\357\234\200')"
+# Chrome would otherwise ask to be made the default browser on every start; the helper app is.
+defaults write com.google.Chrome DefaultBrowserSettingEnabled -bool false
 echo "chrome menu shortcuts: set"
 
-# 2. Karabiner-Elements, which turns ⌃Tab / ⌃⇧Tab into keys the extension can use (Chrome only).
-if [ ! -d "/Applications/Karabiner-Elements.app" ]; then
-  command -v brew >/dev/null || { echo "Install Homebrew first: https://brew.sh"; exit 1; }
-  brew install --cask karabiner-elements
-fi
-mkdir -p "$HOME/.config/karabiner/assets/complex_modifications"
-cp "$here/karabiner/ctrl-tab.json" "$HOME/.config/karabiner/assets/complex_modifications/arc-for-chrome.json"
-python3 -I - "$here/karabiner/ctrl-tab.json" "$HOME/.config/karabiner/karabiner.json" <<'EOF'
-import json, os, shutil, sys, time
-rules = json.load(open(sys.argv[1]))['rules']
-path = sys.argv[2]
-if os.path.exists(path):
-    cfg = json.load(open(path))
-    shutil.copy2(path, f'{path}.bak-{time.strftime("%Y%m%d-%H%M%S")}')
-else:
-    cfg = {'profiles': [{'name': 'Default profile', 'selected': True}]}
-profile = next((p for p in cfg['profiles'] if p.get('selected')), cfg['profiles'][0])
-mods = profile.setdefault('complex_modifications', {}).setdefault('rules', [])
-# Replace this project's rule, including older versions of it with a different description.
-ours = lambda r: r.get('description', '').startswith('Chrome: Ctrl+Tab / Ctrl+Shift+Tab')
-mods[:] = [r for r in mods if not ours(r)] + rules
-# Write a sibling file, then rename over the original, so an interruption can't leave half a config.
-with open(path + '.tmp', 'w') as f:
-    json.dump(cfg, f, indent=2)
-os.replace(path + '.tmp', path)
-print('karabiner rule: installed in profile', repr(profile['name']))
+# 2. The helper app: ⌃Tab switcher, Chrome's launch flags (login item and Dock icon), default browser
+#    for links from other apps, sidebar mini player.
+"$here/helper/install.sh"
+
+# 3. Make it the default browser (a system dialog asks you to confirm).
+open -W -a "$HOME/Applications/Arc for Chrome.app" --args --make-default
+
+# Karabiner was how ⌃Tab used to get through; a rule from an earlier version is removed if present.
+karabiner="$HOME/.config/karabiner/karabiner.json"
+if [ -f "$karabiner" ]; then
+  python3 -I - "$karabiner" <<'EOF'
+import json, os, sys
+path = sys.argv[1]
+cfg = json.load(open(path))
+changed = False
+for p in cfg.get('profiles', []):
+    rules = p.get('complex_modifications', {}).get('rules')
+    if rules is not None:
+        kept = [r for r in rules if not r.get('description', '').startswith('Chrome: Ctrl+Tab / Ctrl+Shift+Tab')]
+        changed |= len(kept) != len(rules)
+        rules[:] = kept
+if changed:
+    with open(path + '.tmp', 'w') as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(path + '.tmp', path)
+    print('karabiner: old rule removed (Karabiner itself can be uninstalled)')
 EOF
-
-# 3. Chrome Launcher: starts Chrome with the launch flags, at login and from the Dock.
-"$here/launcher/install.sh"
-
-# 4. Sidebar mini player: a small Mac app the extension shows over the tab sidebar while music plays.
-"$here/player/install.sh"
+  rm -f "$HOME/.config/karabiner/assets/complex_modifications/arc-for-chrome.json"
+fi
+# Likewise Chrome Launcher.
+launcher_agent="$HOME/Library/LaunchAgents/local.arc-for-chrome.launcher.plist"
+if [ -e "$launcher_agent" ] || [ -d "$HOME/Applications/Chrome Launcher.app" ]; then
+  launchctl bootout "gui/$(id -u)" "$launcher_agent" 2>/dev/null || true
+  rm -rf "$HOME/Applications/Chrome Launcher.app" "$launcher_agent"
+  echo "chrome launcher: removed (the helper app does that now)"
+fi
 
 cat <<'EOF'
 
 Done with the scripted part. Continue with step 3 of "Set up on a new Mac" in README.md:
-approve Karabiner's driver, reopen Chrome from Chrome Launcher, load the extension, set its shortcuts.
+allow Arc for Chrome under Accessibility, reopen Chrome from the Dock, load the extension, set its shortcuts.
 EOF

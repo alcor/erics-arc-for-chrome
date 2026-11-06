@@ -1,30 +1,20 @@
-// Sidebar mini player for Eric's Arc for Chrome: a small floating panel over the bottom of Chrome's
-// vertical tab sidebar, showing what a music tab is playing, with previous, play/pause and next.
-// Clicking the track goes to its tab; × hides it until you've been back to that tab. Chrome starts this through native messaging (player.js), sends
-// it what to show, and closes stdin when it's no longer needed, which quits it. Each message is JSON
-// after its length as a 4-byte native-endian integer. install.sh builds it.
+// Sidebar mini player: a small floating panel over the bottom of Chrome's vertical tab sidebar showing
+// what a music tab is playing, with previous, play/pause and next. Clicking the track goes to its tab;
+// × hides it until you've been back to that tab. The extension (player.js) sends what to show over the
+// bridge and gets the button presses back.
 //
-// Where the sidebar is: Chrome sends the focused window's bounds and the sidebar's width; the panel
-// sits on the frontmost on-screen Chrome window with the same size (so it follows while you drag) or
-// the same corner (while you resize). Window bounds need no permission (only window titles would).
+// Where the sidebar is: the extension sends the focused window's bounds and the sidebar's width; the
+// panel sits on the frontmost on-screen Chrome window with the same size (so it follows while you drag)
+// or the same corner (while you resize).
 import AppKit
 
 struct Bounds: Decodable { let left, top, width, height: Double }
-struct State: Decodable {
+struct PlayerState: Decodable {
   let show: Bool
   let title, artist, artwork: String?
   let playing: Bool?
   let sidebar: Double?
   let window: Bounds?
-}
-
-let chrome = NSRunningApplication(processIdentifier: getppid())
-  ?? NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome").first
-
-func send(_ message: [String: String]) {
-  let data = try! JSONSerialization.data(withJSONObject: message)
-  var length = UInt32(data.count)
-  FileHandle.standardOutput.write(Data(bytes: &length, count: 4) + data)
 }
 
 // Takes the first click even though the panel never becomes the active window.
@@ -39,13 +29,14 @@ final class ClickArea: NSView {
 
 final class Player: NSObject {
   static let height: CGFloat = 84, inset: CGFloat = 8
+  var onAction: (String) -> Void = { _ in }
   let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
   let card = NSVisualEffectView()
   let art = NSImageView()
   let title = NSTextField(labelWithString: "")
   let artist = NSTextField(labelWithString: "")
   var playButton: Button!
-  var state: State?
+  var state: PlayerState?
   var artworkURL: String?
 
   override init() {
@@ -83,7 +74,7 @@ final class Player: NSObject {
     let close = button("xmark", "close", size: 9)
     close.contentTintColor = .secondaryLabelColor
     let track = ClickArea()
-    track.onClick = { send(["action": "focus"]) }
+    track.onClick = { [weak self] in self?.onAction("focus") }
 
     for view in [art, title, artist, controls, track, close] as [NSView] {
       view.translatesAutoresizingMaskIntoConstraints = false
@@ -123,10 +114,11 @@ final class Player: NSObject {
     return b
   }
 
-  @objc func pressed(_ sender: Button) { send(["action": sender.identifier!.rawValue]) }
+  @objc func pressed(_ sender: Button) { onAction(sender.identifier!.rawValue) }
 
-  func apply(_ s: State) {
+  func apply(_ s: PlayerState?) {
     state = s
+    guard let s else { return follow() }
     title.stringValue = s.title ?? ""
     artist.stringValue = s.artist ?? ""
     let symbol = s.playing == true ? "pause.fill" : "play.fill"
@@ -150,8 +142,7 @@ final class Player: NSObject {
   // Keeps the panel on the bottom of the sidebar; hides it when Chrome isn't the app in front.
   func follow() {
     guard let s = state, s.show, let w = s.window, let sidebar = s.sidebar,
-          let chrome, NSWorkspace.shared.frontmostApplication?.processIdentifier == chrome.processIdentifier,
-          let primary = NSScreen.screens.first
+          let chrome = Chrome.running, Chrome.isFrontmost, let primary = NSScreen.screens.first
     else { return panel.orderOut(nil) }
     let sent = CGRect(x: w.left, y: w.top, width: w.width, height: w.height)
     let near = { (a: CGFloat, b: CGFloat) in abs(a - b) < 2 }
@@ -168,40 +159,3 @@ final class Player: NSObject {
     if !panel.isVisible { panel.orderFrontRegardless() }
   }
 }
-
-let app = NSApplication.shared
-app.setActivationPolicy(.accessory)
-let player = Player()
-
-#if SNAPSHOT // swiftc -D SNAPSHOT: draw the card for a sample track to $1 and quit, to check the layout
-player.apply(State(show: false, title: "Love Pledge and the Arena (From \"Star Wars\")", artist: "La Chambre Symphonique",
-                   artwork: nil, playing: true, sidebar: 240, window: nil))
-player.panel.setFrame(NSRect(x: 0, y: 0, width: 224, height: Player.height), display: true)
-player.card.layoutSubtreeIfNeeded()
-let rep = player.card.bitmapImageRepForCachingDisplay(in: player.card.bounds)!
-player.card.cacheDisplay(in: player.card.bounds, to: rep)
-try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: CommandLine.arguments[1]))
-exit(0)
-#endif
-
-// Exactly count bytes from Chrome, or nil once it has closed the connection.
-func read(_ count: Int) -> Data? {
-  var data = Data()
-  while data.count < count {
-    let chunk = FileHandle.standardInput.readData(ofLength: count - data.count)
-    if chunk.isEmpty { return nil }
-    data += chunk
-  }
-  return data
-}
-
-Thread.detachNewThread {
-  while true {
-    guard let header = read(4) else { exit(0) }
-    let length = header.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
-    guard let body = read(Int(length)) else { exit(0) }
-    guard let state = try? JSONDecoder().decode(State.self, from: body) else { continue }
-    DispatchQueue.main.async { player.apply(state) }
-  }
-}
-app.run()
