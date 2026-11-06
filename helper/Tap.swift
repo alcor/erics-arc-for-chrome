@@ -52,7 +52,7 @@ final class Tap {
       return nil
     }
     guard key == Tap.tab, control, !flags.contains(.maskCommand), !flags.contains(.maskAlternate) else { return pass }
-    log.info("ctrl-tab: shift=\(shift) switcher=\(self.useSwitcher())")
+    log.info("ctrl-tab: shift=\(shift, privacy: .public) switcher=\(self.useSwitcher(), privacy: .public)")
     if useSwitcher() {
       switcher.step(back: shift)
       return nil

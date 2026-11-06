@@ -2,14 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleIdentifier</key><string>local.arc-for-chrome.helper</string>
-  <key>CFBundleName</key><string>Arc for Chrome</string>
-  <key>CFBundleDisplayName</key><string>Arc for Chrome</string>
-  <key>CFBundleExecutable</key><string>ArcHelper</string>
+  <key>CFBundleIdentifier</key><string>local.monochrome</string>
+  <key>CFBundleName</key><string>Monochrome</string>
+  <key>CFBundleDisplayName</key><string>Monochrome</string>
+  <key>CFBundleExecutable</key><string>Monochrome</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
-  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleIconFile</key><string>Monochrome</string>
+  <key>CFBundleIconName</key><string>Monochrome</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSPrincipalClass</key><string>NSApplication</string>

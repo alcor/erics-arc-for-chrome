@@ -24,7 +24,7 @@ echo "chrome menu shortcuts: set"
 "$here/helper/install.sh"
 
 # 3. Make it the default browser (a system dialog asks you to confirm).
-open -W -a "$HOME/Applications/Arc for Chrome.app" --args --make-default
+open -W -a "$HOME/Applications/Monochrome.app" --args --make-default
 
 # Karabiner was how ⌃Tab used to get through; a rule from an earlier version is removed if present.
 karabiner="$HOME/.config/karabiner/karabiner.json"
@@ -59,5 +59,5 @@ fi
 cat <<'EOF'
 
 Done with the scripted part. Continue with step 3 of "Set up on a new Mac" in README.md:
-allow Arc for Chrome under Accessibility, reopen Chrome from the Dock, load the extension, set its shortcuts.
+allow Monochrome under Accessibility, reopen Chrome from the Dock, load the extension, set its shortcuts.
 EOF

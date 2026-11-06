@@ -1,4 +1,4 @@
-// Arc for Chrome.app: one binary, picked by argument.
+// Monochrome.app: one binary, picked by argument.
 //   (none)          the app: login item, Dock stand-in for Chrome, default browser, ⌃Tab tap, panels
 //   --host          native messaging host, spawned by Chrome for the extension (Host.swift)
 //   --make-default  ask macOS to make this the default browser (a system dialog), then quit
@@ -6,7 +6,7 @@
 //   --demo          show the ⌃Tab switcher with sample tabs, to look at it (nothing else runs); prints
 //                   the panel's rectangle on stderr for screencapture -R
 //   --status        whether the app half is up and the extension's host is connected
-// Log: log stream --info --predicate 'subsystem == "local.arc-for-chrome"' (Accessibility shows there; asking
+// Log: log stream --info --predicate 'subsystem == "local.monochrome"' (Accessibility shows there; asking
 // from a shell would report the terminal's grant, not the app's)
 import AppKit
 import ServiceManagement

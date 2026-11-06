@@ -5,13 +5,13 @@
 import Foundation
 import os
 
-let log = Logger(subsystem: "local.arc-for-chrome", category: "helper")
+let log = Logger(subsystem: "local.monochrome", category: "helper")
 
 enum Socket {
   static var path: String {
     if let p = ProcessInfo.processInfo.environment["ARC_HELPER_SOCKET"] { return p }
     let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    let dir = support.appendingPathComponent("Arc for Chrome")
+    let dir = support.appendingPathComponent("Monochrome")
     try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     return dir.appendingPathComponent("helper.sock").path
   }

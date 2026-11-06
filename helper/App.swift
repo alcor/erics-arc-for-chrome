@@ -1,5 +1,5 @@
 // The app half: launched at login (it registers itself as a login item) and from the Dock, where it
-// wears Chrome's icon so that opening Chrome goes through it and gets the launch flags. Also the
+// takes Chrome's place so that opening Chrome goes through it and gets the launch flags. Also the
 // default browser: links from other apps arrive here and go to the extension over the bridge, which
 // opens them as Little Arcs without a tab ever passing through the main window. If the extension isn't
 // connected, the link goes to Chrome the ordinary way and the extension catches it there.
@@ -7,7 +7,7 @@ import AppKit
 import ServiceManagement
 
 final class App: NSObject, NSApplicationDelegate {
-  static let bundleId = "local.arc-for-chrome.helper"
+  static let bundleId = "local.monochrome"
   let switcher = Switcher()
   let player = Player()
   let tap = Tap()
@@ -26,7 +26,7 @@ final class App: NSObject, NSApplicationDelegate {
     player.onAction = { [weak self] action in self?.send(["player": ["action": action]]) }
 
     server = SocketServer(path: Socket.path, queue: .main)
-    if server == nil { log.error("socket: could not listen at \(Socket.path)") }
+    if server == nil { log.error("socket: could not listen at \(Socket.path, privacy: .public)") }
     server?.onConnection = { [weak self] peer in
       guard let self else { return }
       log.info("host: connected")
@@ -44,7 +44,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     whenTrusted { [weak self] in
       let installed = self?.tap.install() ?? false
-      log.info("tap: \(installed ? "installed" : "could not be created")")
+      log.info("tap: \(installed ? "installed" : "could not be created", privacy: .public)")
     }
     if Chrome.running == nil { Chrome.open(activate: false) } else { Chrome.warnIfStartedWithoutFlags() }
   }

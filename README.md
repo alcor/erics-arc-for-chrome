@@ -1,9 +1,9 @@
-# Eric's Arc for Chrome
+# Eric's Monochrome
 
 Arc's best habits for Google Chrome on macOS, working with Chrome's own (vertical) tab bar. No sidebar, no extra window. Pieces:
 
 - a Chrome extension (this folder): locked tabs, new tabs at the top, ⌃Tab by recent use, Little Arc and Peek, sidebar mini player
-- a small Mac app, Arc for Chrome (`helper/`), for what an extension can't do: the ⌃Tab switcher with tab thumbnails, starting Chrome with launch flags (it stands in for Chrome in the Dock and at login), catching links from other apps as the default browser, and drawing the mini player over the tab sidebar
+- a small Mac app, Monochrome (`helper/`), for what an extension can't do: the ⌃Tab switcher with tab thumbnails, starting Chrome with launch flags (it stands in for Chrome in the Dock and at login), catching links from other apps as the default browser, and drawing the mini player over the tab sidebar
 - macOS App Shortcuts: ⌘S hides/shows the tab sidebar, ⌥⌘↓/↑ move through the tab list
 - an optional one-time import of your Arc history and form autofill
 
@@ -36,15 +36,15 @@ Use this repository's clone URL from its GitHub page (Code → HTTPS), for examp
 git clone https://github.com/YOUR-GITHUB-USERNAME/erics-arc-for-chrome.git ~/dev/erics-arc-for-chrome
 ```
 
-**2. Run the setup script.** It sets the Chrome menu shortcuts (⌘S, ⌥⌘↓/↑), builds and installs the Arc for Chrome helper app (needs the Xcode command line tools: `xcode-select --install`) as a login item with a Dock icon, and asks macOS to make it the default browser. Safe to re-run.
+**2. Run the setup script.** It sets the Chrome menu shortcuts (⌘S, ⌥⌘↓/↑), builds and installs the Monochrome helper app (needs the Xcode command line tools: `xcode-select --install`) as a login item with a Dock icon, and asks macOS to make it the default browser. Safe to re-run.
 
 ```bash
 ~/dev/erics-arc-for-chrome/setup.sh
 ```
 
-**3. Allow the helper.** It asks for Accessibility the first time it runs (that's how it sees ⌃Tab): System Settings → Privacy & Security → Accessibility → allow **Arc for Chrome**. Re-running the setup rebuilds the app, and unless a Developer ID certificate was in your keychain to sign it with, macOS treats the rebuilt app as new and asks again.
+**3. Allow the helper.** It asks for Accessibility the first time it runs (that's how it sees ⌃Tab): System Settings → Privacy & Security (called Device Control and Data Access on newer macOS) → Accessibility → allow **Monochrome**. Re-running the setup rebuilds the app, and unless a Developer ID certificate was in your keychain to sign it with, macOS treats the rebuilt app as new and asks again; if the switch is already on from the earlier build, flipping it doesn't take, so remove the entry (−) and add the app again, or run `tccutil reset Accessibility local.monochrome` and reopen the app.
 
-**4. Restart Chrome from the Dock.** Quit Chrome (⌘Q), then click the Chrome icon in the Dock: it's the helper app wearing Chrome's icon, and it starts Chrome with its launch flags. From now on always open Chrome that way (it also starts at login). If Chrome was started some other way, a notification tells you to quit and reopen it.
+**4. Restart Chrome from the Dock.** Quit Chrome (⌘Q), then click Monochrome in the Dock, where it has taken Chrome's place: it starts Chrome with its launch flags. From now on always open Chrome that way (it also starts at login). If Chrome was started some other way, a notification tells you to quit and reopen it.
 
 **5. Chrome settings.**
 - Right-click the tab bar → **Show Tabs Vertically**
@@ -99,7 +99,7 @@ Chrome doesn't let extensions use the Tab key, tell them when ⌃ is released, o
 
 ### The helper app
 
-`helper/` is one Swift binary, built by `helper/install.sh` into `~/Applications/Arc for Chrome.app`. The app half runs at login (it registers itself as a login item) and owns the ⌃Tab event tap, the switcher and mini player panels, the Dock stand-in that starts Chrome with its flags, and the default-browser role. The host half is what Chrome spawns as the extension's native messaging host; it relays between the extension's port and the app over a Unix socket and pings the extension every 20 seconds so Chrome doesn't stop its service worker for being idle. Everything in the extension works without the helper, with the fallbacks described above.
+`helper/` is one Swift binary, built by `helper/install.sh` into `~/Applications/Monochrome.app`. The app half runs at login (it registers itself as a login item) and owns the ⌃Tab event tap, the switcher and mini player panels, the Dock tile in Chrome's place that starts it with its flags, and the default-browser role. The host half is what Chrome spawns as the extension's native messaging host; it relays between the extension's port and the app over a Unix socket and pings the extension every 20 seconds so Chrome doesn't stop its service worker for being idle. Everything in the extension works without the helper, with the fallbacks described above.
 
 ### Little Arc
 

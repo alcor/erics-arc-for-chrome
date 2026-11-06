@@ -403,7 +403,7 @@ console.log('mini player: track info and buttons: ok');
 
 // The helper's host role (if built: helper/install.sh) reads a message that arrives in pieces, stays up
 // without the app half, and quits when Chrome closes the connection.
-const helperBinary = path.join(ext, 'helper/build/Arc for Chrome.app/Contents/MacOS/ArcHelper');
+const helperBinary = path.join(ext, 'helper/build/Monochrome.app/Contents/MacOS/Monochrome');
 if (fs.existsSync(helperBinary)) {
   const p = spawn(helperBinary, ['--host'], { stdio: ['pipe', 'ignore', 'inherit'],
     env: { ...process.env, ARC_HELPER_SOCKET: path.join(profile, 'no.sock'), ARC_HELPER_NO_LAUNCH: '1' } });

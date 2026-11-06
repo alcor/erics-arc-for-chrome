@@ -86,7 +86,7 @@ final class Switcher {
   // --demo: the panel with sample tabs, to look at.
   func demo() {
     let colors: [NSColor] = [.systemBlue, .systemOrange, .systemGreen, .systemPink, .systemTeal, .systemIndigo, .systemBrown]
-    tabs = ["Eric's Arc for Chrome", "Liquid Glass | Apple Developer Documentation", "Inbox (3) - Gmail", "Figma", "Hacker News",
+    tabs = ["Eric's Monochrome", "Liquid Glass | Apple Developer Documentation", "Inbox (3) - Gmail", "Figma", "Hacker News",
             "Chrome Extensions: chrome.tabs", "YouTube"].enumerated().map { i, title in
       let favicon = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
         colors[i].setFill(); NSBezierPath(roundedRect: rect, xRadius: 8, yRadius: 8).fill(); return true

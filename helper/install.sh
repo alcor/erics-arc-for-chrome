@@ -1,7 +1,7 @@
 #!/bin/sh
-# Builds Arc for Chrome.app from the Swift here, installs it to ~/Applications, registers it with Chrome
-# as the extension's native messaging host, and puts it in the Dock in place of Google Chrome (wearing
-# Chrome's icon, so opening Chrome goes through it and gets its launch flags). Needs the Xcode command
+# Builds Monochrome.app from the Swift here, installs it to ~/Applications, registers it with Chrome
+# as the extension's native messaging host, and puts it in the Dock in place of Google Chrome, so
+# opening Chrome goes through it and gets its launch flags. Needs the Xcode command
 # line tools. Safe to re-run; re-run after moving the repo, since the extension's ID comes from its folder.
 #
 # Signing: macOS ties the Accessibility grant (for the ⌃Tab tap) to the app's signature. Signed with a
@@ -9,10 +9,10 @@
 # binary and every rebuild has to be allowed again in System Settings.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd -P)
-name="Arc for Chrome"
+name="Monochrome"
 build="$here/build/$name.app"
 app="$HOME/Applications/$name.app"
-bundle_id="local.arc-for-chrome.helper"
+bundle_id="local.monochrome"
 host="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/erics_arc_helper.json"
 
 swiftc --version >/dev/null 2>&1 || { echo "helper: needs the command line tools: xcode-select --install"; exit 1; }
@@ -20,18 +20,32 @@ swiftc --version >/dev/null 2>&1 || { echo "helper: needs the command line tools
 
 rm -rf "$build"
 mkdir -p "$build/Contents/MacOS" "$build/Contents/Resources"
-swiftc -O -o "$build/Contents/MacOS/ArcHelper" "$here"/*.swift
+swiftc -O -o "$build/Contents/MacOS/Monochrome" "$here"/*.swift
 cp "$here/Info.plist" "$build/Contents/Info.plist"
 cp "$here/host.sh" "$build/Contents/Resources/host.sh"
 chmod +x "$build/Contents/Resources/host.sh"
-cp "/Applications/Google Chrome.app/Contents/Resources/app.icns" "$build/Contents/Resources/AppIcon.icns"
+# The icon (Monochrome.icon, an Icon Composer document) needs Xcode's actool; with only the command
+# line tools the app wears Chrome's icon instead.
+if ! xcrun actool "$here/Monochrome.icon" --compile "$build/Contents/Resources" --app-icon Monochrome \
+     --output-partial-info-plist /dev/null --platform macosx --minimum-deployment-target 13.0 >/dev/null 2>&1; then
+  cp "/Applications/Google Chrome.app/Contents/Resources/app.icns" "$build/Contents/Resources/Monochrome.icns"
+  echo "helper: icon not compiled (needs Xcode), using Chrome's"
+fi
 identity=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)
 codesign --force --deep --sign "${identity:--}" "$build"
 echo "helper: built, signed ${identity:+with $identity}${identity:-ad hoc (Accessibility has to be allowed again after each rebuild)}"
 
-# Replace the installed copy. A running one is quit first so the new one is what starts.
+# Replace the installed copy. A running one is quit first so the new one is what starts. An earlier
+# version of the app was called Arc for Chrome; its login item, socket and app go too.
+old="$HOME/Applications/Arc for Chrome.app"
+if [ -d "$old" ]; then
+  osascript -e 'tell application id "local.arc-for-chrome.helper" to quit' >/dev/null 2>&1 || true
+  pkill -x ArcHelper 2>/dev/null || true
+  "$old/Contents/MacOS/ArcHelper" --unregister 2>/dev/null || true # the binary itself: open would hand off to a running copy
+  rm -rf "$old" "$HOME/Library/Application Support/Arc for Chrome"
+fi
 osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1 || true
-pkill -x ArcHelper 2>/dev/null || true
+pkill -x Monochrome 2>/dev/null || true
 sleep 0.5
 mkdir -p "$HOME/Applications"
 rm -rf "$app"
@@ -44,14 +58,14 @@ python3 -I - "$host" "$app/Contents/Resources/host.sh" "$id" <<'EOF'
 import json, sys
 host, path, id = sys.argv[1:]
 with open(host, 'w') as f:
-    json.dump({'name': 'erics_arc_helper', 'description': "Eric's Arc for Chrome: helper app",
+    json.dump({'name': 'erics_arc_helper', 'description': "Eric's Monochrome: helper app",
                'path': path, 'type': 'stdio', 'allowed_origins': [f'chrome-extension://{id}/']}, f, indent=2)
 EOF
 rm -f "$(dirname "$host")/erics_arc_player.json"
 echo "helper: registered with Chrome for extension $id"
 
 # Dock: swap a pinned Google Chrome icon (which would start Chrome without the flags) for the helper.
-dock_bak="$HOME/Library/Preferences/com.apple.dock.plist.pre-arc-for-chrome.bak"
+dock_bak="$HOME/Library/Preferences/com.apple.dock.plist.pre-monochrome.bak"
 [ -e "$dock_bak" ] || cp "$HOME/Library/Preferences/com.apple.dock.plist" "$dock_bak"
 # The Dock drops icons for apps macOS hasn't registered yet, and the app was just rebuilt.
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$app"
@@ -62,12 +76,13 @@ raw = subprocess.run(['defaults', 'export', 'com.apple.dock', '-'], capture_outp
 dock = plistlib.loads(raw)
 tiles = dock.get('persistent-apps', [])
 keep = [t for t in tiles if t.get('tile-data', {}).get('bundle-identifier') != 'com.google.Chrome'
-        and t.get('tile-data', {}).get('file-label') not in ('Chrome Launcher', name)]
+        and t.get('tile-data', {}).get('file-label') not in ('Chrome Launcher', 'Arc for Chrome', name)]
 if len(keep) != len(tiles):
     dock['persistent-apps'] = keep
     subprocess.run(['defaults', 'import', 'com.apple.dock', '-'], input=plistlib.dumps(dock), check=True)
 EOF
-in_dock() { defaults read com.apple.dock persistent-apps | grep -q "\"file-label\" = \"$name\""; }
+# defaults quotes a label only when it has spaces.
+in_dock() { defaults read com.apple.dock persistent-apps | grep -qE "\"file-label\" = \"?$name\"?;"; }
 # A Dock that restarted in the last few seconds writes its old icons back over the change, so wait
 # until it has been up a while before each attempt, then check.
 wait_for_settled_dock() {
