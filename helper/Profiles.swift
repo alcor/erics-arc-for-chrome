@@ -105,11 +105,13 @@ final class Profiles {
            height: avatar + 16 + 6 + labelHeight + 2 * pad)
   }
 
-  // --demo-profiles: the HUD on the real profiles, nothing pressed.
-  func demo() {
-    let profiles = Self.read()
+  // --demo-profiles: the HUD on the real profiles, nothing pressed; with --backdrop, on sample names.
+  func demo(sample: Bool = false) {
+    let profiles = sample
+      ? ["Work (acme.com)", "Personal", "Geist"].enumerated().map { Profile(name: $1, item: AXUIElementCreateSystemWide(), current: $0 == 0) }
+      : Self.read()
     guard !profiles.isEmpty else { return FileHandle.standardError.write(Data("no Profiles menu: is Chrome running with more than one profile?\n".utf8)) }
-    show(profiles, index: profiles.firstIndex(where: \.current) ?? 0)
+    show(profiles, index: sample ? 1 : profiles.firstIndex(where: \.current) ?? 0)
     hideTimer?.invalidate()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [self] in
       let f = panel.frame, top = (NSScreen.screens.first?.frame.height ?? 0) - f.maxY

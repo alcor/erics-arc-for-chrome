@@ -358,6 +358,41 @@ await sleep(300);
 assert.deepEqual(await miniBrowsers(), []);
 console.log('mini browser: archived after 12 hours: ok');
 
+// Routed links (routes.js): the helper's rule names a destination inside this profile.
+const route = (p, to) => sw.evaluate(([url, to]) => routeOpen(url, to), [p, to]);
+const tabOf = id => sw.evaluate(async id => {
+  const t = await chrome.tabs.get(id);
+  const w = await chrome.windows.get(t.windowId);
+  return { url: t.pendingUrl || t.url, index: t.index, groupId: t.groupId, windowType: w.type };
+}, id);
+// same-site: a tab already on that host is reused and navigated; the front window's wins.
+const siteTab = await open('/site/one');
+const reused = await route(`${base}/site/two`, { window: 'same-site' });
+assert.equal(reused, siteTab);
+await sleep(300);
+assert.equal((await tabOf(reused)).url, `${base}/site/two`);
+// same-site with no tab on that host (localhost is another hostname here): a new tab at the top of the window.
+const fresh = await route(`http://localhost:${server.address().port}/elsewhere`, { window: 'same-site' });
+await settle();
+const freshTab = await tabOf(fresh);
+assert.equal(freshTab.windowType, 'normal');
+assert.equal(freshTab.index, await sw.evaluate(async id => topIndex((await chrome.tabs.get(id)).windowId, id), fresh));
+await close(fresh);
+// group: the tab joins the named group, made if missing; a second one joins the same group.
+const rg1 = await route(`${base}/routed/1`, { group: 'Routed' });
+const rg2 = await route(`${base}/routed/2`, { group: 'Routed' });
+await settle();
+assert.notEqual((await tabOf(rg1)).groupId, -1);
+assert.equal((await tabOf(rg1)).groupId, (await tabOf(rg2)).groupId);
+assert.deepEqual(await sw.evaluate(() => chrome.tabGroups.query({ title: 'Routed' }).then(gs => gs.length)), 1);
+await close(rg1); await close(rg2); await close(siteTab);
+// no destination: a mini browser, as before rules.
+const plain = await route(`${base}/routed/mini`, {});
+await settle();
+assert.equal((await tabOf(plain)).windowType, 'popup');
+await close(plain);
+console.log('routes: same-site, front, group, mini: ok');
+
 // A link from another app (a second launch handing a URL to the running browser) opens in a mini browser.
 // Headless Chromium doesn't accept that hand-off, so this one needs HEADFUL=1.
 if (process.env.HEADFUL) {
@@ -368,11 +403,11 @@ if (process.env.HEADFUL) {
   console.log('mini browser: link from another app: ok');
 } else console.log('mini browser: link from another app: skipped (run with HEADFUL=1)');
 
-// Mini player: player/install.sh works out the extension's ID from its folder the way Chrome does.
-const idFromPath = p => [...crypto.createHash('sha256').update(p).digest('hex').slice(0, 32)]
+// The extension ID Chrome assigns comes from the manifest key, the way helper/install.sh computes it.
+const idFromKey = key => [...crypto.createHash('sha256').update(Buffer.from(key, 'base64')).digest('hex').slice(0, 32)]
   .map(c => String.fromCharCode(97 + parseInt(c, 16))).join('');
-assert.equal(await sw.evaluate(() => chrome.runtime.id), idFromPath(fs.realpathSync(ext)));
-console.log('mini player: extension id from folder: ok');
+assert.equal(await sw.evaluate(() => chrome.runtime.id), idFromKey(JSON.parse(fs.readFileSync(path.join(ext, 'manifest.json'), 'utf8')).key));
+console.log('extension id from the manifest key: ok');
 
 // A music site's track reaches the player, and the player's buttons reach the site's handlers.
 await ctx.route('https://open.spotify.com/**', route => route.fulfill({ contentType: 'text/html', body: `<script>

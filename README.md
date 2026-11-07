@@ -1,10 +1,12 @@
 # Monochrome
 
-Locked tabs, new tabs at the top, ⌃Tab by recent use with a thumbnail switcher, throwaway mini browsers, peek browsers for links from locked tabs, profile hotkeys and a mini player over the tab sidebar, for Google Chrome on macOS. These are the Arc features it ports. Chrome's own vertical tab bar is the sidebar; nothing is added to the window.
+Locked tabs, new tabs at the top, ⌃Tab by recent use with a thumbnail switcher, throwaway mini browsers, peek browsers for links from locked tabs, profile hotkeys and a mini player over the tab sidebar, for Google Chrome on macOS. Chrome's own vertical tab bar is the sidebar; nothing is added to the window.
 
 ## Summary
 
 Two parts. A Chrome extension, loaded unpacked from this folder, does what an extension can: locked tabs, tab order, the recent-tab list, mini and peek browser windows, the music hooks. A Mac app, Monochrome, built from `helper/`, reads ⌃Tab and the other hotkeys through an event tap, draws the switcher, the mini browser bar, the peek shade, the profile HUD and the mini player as panels over Chrome, starts Chrome with its launch flags from the Dock and at login, and is the default browser so links from other apps reach the extension without passing through the main window. Every extension feature except ⌥⌘-click has a fallback for when the app is not running.
+
+Links from other apps follow rules in one file, by URL and sending app, to a profile, a tab group, an existing tab on the same site, another app, or the default, a mini browser.
 
 Setup is `setup.sh`, one Accessibility grant, three Chrome settings and one unpacked load per profile. Uninstall is `uninstall.sh`.
 
@@ -34,7 +36,9 @@ Hotkeys are resolved through the active keyboard layout: ⌥⇧N is the key that
 
 ## Setup
 
-Requires Google Chrome, git and the Xcode command line tools (`xcode-select --install`).
+The built app is on the releases page, https://github.com/alcor/monochrome/releases/latest, as a zip: move Monochrome.app to Applications and open it. It is signed with an Apple Development certificate and not notarized, so the first open is a right-click and Open. Opened from the Finder it shows its settings; its General tab has the login item, the default-browser switch and the Accessibility status, and the extension's options page links to the same release. The extension itself comes from the Web Store or, as below, from this folder.
+
+Building from source requires Google Chrome, git and the Xcode command line tools (`xcode-select --install`).
 
 1. Clone to a permanent folder. Chrome loads the extension from it, so not Downloads.
 
@@ -54,9 +58,9 @@ Requires Google Chrome, git and the Xcode command line tools (`xcode-select --in
 
 5. In Chrome: right-click the tab bar → Show Tabs Vertically. Settings → On startup → Continue where you left off. `chrome://flags/#browser-initiated-automatic-picture-in-picture` → Enabled, for video that pops out when its tab is left.
 
-6. Load the extension in each profile: `chrome://extensions` → Developer mode → Load unpacked → this folder. Loading from the same folder in every profile keeps one extension ID, which is what the helper's registration names. After pulling changes, click reload on the extension's card; Chrome does not re-read an unpacked extension on relaunch.
+6. Load the extension in each profile: `chrome://extensions` → Developer mode → Load unpacked → this folder. The manifest carries a public key, so the extension's ID is the same from any folder and from the Web Store, and the helper's registration names that one ID. After pulling changes, click reload on the extension's card; Chrome does not re-read an unpacked extension on relaunch. The options page, which opens on install, shows whether the app is connected and sets the locked group's title.
 
-7. Pin the tabs that should be locked, and put everyday tabs in a tab group named `CoreCore`. The group name is `LOCKED_GROUPS` in `background.js`.
+7. Pin the tabs that should be locked, and put everyday tabs in a tab group named `CoreCore`, or whatever title the options page is given.
 
 8. Optional, once: `migrate/arc-to-chrome.sh` merges Arc's last 90 days of history and its form autofill into Chrome, backing up both databases first. It quits and reopens Chrome.
 
@@ -89,6 +93,30 @@ A mini browser is a popup window: no tab strip, no sidebar, ⌘[ for back. Size 
 - ⌥⌘-click on any page opens the link in one. The tap sees the click; there is no fallback.
 - The bar, top right over the title bar, is a glass panel of the app: a link button or ⌘L for the address field, Open in Chrome or ⌘O to move the page into the main window, a caret or ⇧⌘O for the list of windows and groups, each window named by its active tab. The bar hides while the window is dragged and while the mini browser is not the key window. Without the app, the same bar is drawn inside the page.
 
+## Links from other apps follow rules
+
+Monochrome is the default browser, so a link from Slack, Mail or a terminal reaches it first, with the sending app's identity from the open event. It checks the link against `~/Library/Application Support/Monochrome/routes.json`, an array of rules, first match wins, and a link no rule claims opens as a mini browser in the profile whose window is in front. The file is re-read when it changes. The Router tab of the settings window edits the same file: a list of rules in order, and the selected rule's fields under it.
+
+```json
+[
+  { "match": { "host": "atlassian.net" },                     "to": { "profile": "Nicholas (artifact.com)", "window": "same-site" } },
+  { "match": { "from": "com.tinyspeck.slackmacgap" },         "to": { "mini": true } },
+  { "match": { "host": "zoom.us", "path": "/j/*" },           "to": { "app": "us.zoom.xos" } },
+  { "match": { "host": "github.com" },                        "to": { "group": "Code" } },
+  { "match": { "url": "https://docs.google.com/document/*" },  "to": { "window": "same-site" } }
+]
+```
+
+Match fields, all of which must hold: `host` (a bare name matches it and its subdomains; `*` is a wildcard anywhere), `path`, `url` (the whole address), `from` (the sender's bundle id). A rule with no `match` matches everything. Destination fields: `app` (a bundle id; Chrome never sees the link), `profile` (a name as Chrome's Profiles menu shows it), and inside the profile one of `mini` (the default), `window: "same-site"` (a tab already on that host, the front window's first, navigated to the link; with none, a new tab at the top of the front window), `window: "front"` (that new tab) or `group` (a tab group's title; the tab joins it in whatever window has it, and the group is made in the front window if none does).
+
+A profile destination goes over that profile's connection when the app knows it by name, which it learns from Chrome's window titles. Otherwise the app presses the profile's item in Chrome's Profiles menu, which brings that profile forward or opens it, waits up to three seconds for its extension to connect, and failing that hands the URL to Chrome, which opens it as a tab in the profile now in front.
+
+```bash
+~/Applications/Monochrome.app/Contents/MacOS/Monochrome --routes https://github.com/arfct/geist com.tinyspeck.slackmacgap
+```
+
+prints the rules and the one that URL would take. The sender argument is optional. Without the helper, links from other apps land in the main window and become mini browsers; no rule applies.
+
 ## Peek browsers catch links from locked tabs
 
 A link from a locked tab that would open a new tab opens as a mini browser over the window, with the window behind it shaded. A click on the shade or on another window closes it; ⌘O keeps the page as a tab. The shade is a panel the size of the parent window, ordered directly below the peek browser, and fades in.
@@ -113,7 +141,7 @@ Typing words and pressing Enter opens the history entry that matches them rather
 
 `helper/install.sh` compiles the Swift in `helper/` into `~/Applications/Monochrome.app`. Run as the app, it registers itself as a login item, owns the event tap and every panel, the Dock tile and the default-browser role. Run as `--host`, which is what Chrome spawns for the extension's native messaging host, it relays between the extension's port and the app over a Unix socket in `~/Library/Application Support/Monochrome` and pings the extension every 20 seconds so Chrome does not stop the service worker for idleness. Each Chrome profile gets its own host process and connection; the app routes tab actions to the connection that owns the tab and front-window actions to the connection whose reported front window matches Chrome's.
 
-`Monochrome --status` prints the layout's keycodes, whether the app is running and whether the socket exists. Logs go to the unified log under subsystem `local.monochrome`:
+`Monochrome --status` prints the layout's keycodes, whether the app is running and whether the socket exists; `--routes` prints the link rules; `--settings` opens the settings window, which also opens on a double-click of the app in the Finder (a click on its Dock tile opens Chrome instead) and from the ▾ menu of any mini browser's bar. The window has two tabs, General (login item, default browser, Accessibility, Chrome's launch flags, which profiles are connected) and Router (the rules). While it is open the app is in the Dock with a menu bar; when it closes the app goes back to running without either. Logs go to the unified log under subsystem `local.monochrome`:
 
 ```bash
 /usr/bin/log stream --info --predicate 'subsystem == "local.monochrome"'
@@ -127,6 +155,10 @@ Typing words and pressing Enter opens the history entry that matches them rather
 
 It removes the app, its login item, Dock tile, support folder and host registration, this project's App Shortcuts, and what earlier versions installed: Chrome Launcher and a Karabiner rule. Karabiner itself and other App Shortcuts stay. Then remove the extension in `chrome://extensions`, restart Chrome, and choose Chrome as the default browser in System Settings → Desktop & Dock.
 
+## The store package is the extension alone
+
+`store/pack.sh` zips the extension's files into `dist/monochrome-extension-<version>.zip` for the Chrome Web Store; the app, tests, docs and scripts stay out, and so does the manifest's `key`, which the store refuses in an upload. The store assigned the ID in `store/id` on the first upload, and `helper/install.sh` registers the helper for that ID as well as the unpacked one's, so either copy reaches it. To make the unpacked extension the same extension as the store's, install the store's copy once and run `store/adopt-key.sh <id>`, which copies the store's key into this manifest. `store/listing.md` holds the listing's text, the permission justifications and the privacy answers, the listing links Artifact's shared policy at artifact.com/privacy?Monochrome and `docs/privacy.md` is the detailed statement, and `store/screenshots/` the images: the switcher, profile HUD and Router tab from `Monochrome --demo --backdrop`, `--demo-profiles --backdrop` and `--demo-settings --backdrop`, each over a plain window with sample data, and the promo tiles from `swift store/tiles.swift`. The store takes JPEG or PNG without alpha; these are JPEG.
+
 ## Tests
 
 ```bash
@@ -137,7 +169,7 @@ The suite drives headless Chromium with the extension loaded and spawns the buil
 
 ## Not verified
 
-I am an automated contributor and this is what I did not exercise by hand: two profiles connected to the app at once; dragging a peek browser with its shade; a profile switch by hotkey beyond reading the menu; whether Chrome matches the ⌃. and ⌃, fallback commands by typed character or by key position on Dvorak; and whether reading Chrome's menu bar over Accessibility changes Chrome's own accessibility mode.
+I am an automated contributor and this is what I did not exercise by hand: two profiles connected to the app at once; dragging a peek browser with its shade; a profile switch by hotkey beyond reading the menu; a rule with a `profile` destination for a profile that is not running; whether every app's open event names the sender; whether Chrome matches the ⌃. and ⌃, fallback commands by typed character or by key position on Dvorak; and whether reading Chrome's menu bar and window titles over Accessibility changes Chrome's own accessibility mode.
 
 ## What would change this design
 

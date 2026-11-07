@@ -7,9 +7,14 @@
 import Carbon
 
 enum Keyboard {
-  private static var layoutId = ""
   private static var characters: [Int64: String] = [:]
   private static var codes: [String: Int64] = [:]
+  private static var stale = true
+  // The table is rebuilt only after the system says the input source changed, not checked per keystroke.
+  private static let layoutObserver: Void = {
+    DistributedNotificationCenter.default().addObserver(forName: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+                                                        object: nil, queue: .main) { _ in stale = true }
+  }()
 
   static func character(_ code: Int64) -> String {
     refresh()
@@ -22,11 +27,9 @@ enum Keyboard {
   }
 
   private static func refresh() {
-    guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-          let idPointer = TISGetInputSourceProperty(source, kTISPropertyInputSourceID) else { return }
-    let id = Unmanaged<CFString>.fromOpaque(idPointer).takeUnretainedValue() as String
-    guard id != layoutId else { return }
-    layoutId = id
+    _ = layoutObserver
+    guard stale, let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue() else { return }
+    stale = false
     characters = [:]
     codes = [:]
     guard let dataPointer = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return }

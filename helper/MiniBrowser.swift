@@ -14,6 +14,7 @@ struct MiniBrowser {
   let url, title: String
   let over: CGRect? // a peek browser: the window it covers
   let targets: [Target] // where it can be moved to: its own profile's windows and groups
+  var profile: String? // the profile's name as Chrome shows it, once the app has learned it
 }
 
 struct Target {
@@ -46,9 +47,7 @@ final class MiniBrowsers {
     }
   }
 
-  func follow() {
-    let onScreen = Chrome.windows()
-    let front = Chrome.isFrontmost
+  func follow(_ onScreen: [Chrome.Window], front: Bool) {
     var shown = Set<Int>()
     if front {
       // Only the mini browser that is Chrome's front window gets its bar; ones behind it don't.
@@ -69,7 +68,7 @@ final class MiniBrowsers {
     }
     // The shade stays through a drag of the peek browser: its window is known by number once matched,
     // and a tick or two without it (a drag, a frame in flight) doesn't drop it.
-    if front, let peek = windows.first(where: { $0.over != nil }), let over = Self.match(peek.over!, in: onScreen),
+    if front, let peek = windows.first(where: { $0.over != nil }), let over = Chrome.match(peek.over!, in: onScreen),
        let peekWindow = resolve(peek, in: onScreen) {
       shadeMissing = 0
       shade.show(over: Chrome.appKit(over.frame), below: peekWindow.id) { [weak self] in
@@ -88,7 +87,7 @@ final class MiniBrowsers {
   // is still on screen, else by frame.
   private func resolve(_ w: MiniBrowser, in onScreen: [Chrome.Window]) -> Chrome.Window? {
     if let id = windowIds[w.id], let window = onScreen.first(where: { $0.id == id }) { return window }
-    guard let window = Self.match(w.frame, in: onScreen) else { return nil }
+    guard let window = Chrome.match(w.frame, in: onScreen) else { return nil }
     windowIds[w.id] = window.id
     return window
   }
@@ -96,17 +95,11 @@ final class MiniBrowsers {
   // The mini browser whose window is Chrome's front one.
   var frontWindow: MiniBrowser? {
     guard let front = Chrome.windows().first else { return nil }
-    return windows.first { Self.match($0.frame, in: [front]) != nil }
+    return windows.first { Chrome.match($0.frame, in: [front]) != nil }
   }
 
   func showAddress(_ id: Int) { bars[id]?.showAddress() }
   func showMenu(_ id: Int) { bars[id]?.showMenu() }
-
-  // The on-screen window with the same size (it's being dragged) or the same corner (being resized).
-  static func match(_ sent: CGRect, in windows: [Chrome.Window]) -> Chrome.Window? {
-    let near = { (a: CGFloat, b: CGFloat) in abs(a - b) < 2 }
-    return windows.first { (near($0.frame.width, sent.width) && near($0.frame.height, sent.height)) || (near($0.frame.minX, sent.minX) && near($0.frame.minY, sent.minY)) }
-  }
 
   // --demo-shade: the shade over Chrome's second window, ordered below its first, to see that a panel
   // can be ordered between another app's windows.
@@ -206,7 +199,9 @@ final class MiniBrowserBar: NSObject, NSTextFieldDelegate {
   func update(_ w: MiniBrowser, shortcuts: [String: String], targets: [Target]) {
     url = w.url
     self.targets = targets
-    let title = "Open in Chrome" + (shortcuts["mini-open"].map { "  " + $0 } ?? "")
+    // "Nicholas (jitkoff.com)" is shown as its account, jitkoff.com; a name without one is shown whole.
+    let profile = w.profile.map { name in name.split(separator: "(", maxSplits: 1).last.map { $0.replacingOccurrences(of: ")", with: "").trimmingCharacters(in: .whitespaces) } ?? name }
+    let title = "Open in " + (profile ?? "Chrome") + (shortcuts["mini-open"].map { "  " + $0 } ?? "")
     if open.title != title {
       open.attributedTitle = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: 12, weight: .medium), .foregroundColor: NSColor.labelColor])
       open.sizeToFit()
@@ -333,9 +328,13 @@ final class MiniBrowserBar: NSObject, NSTextFieldDelegate {
       }
       menu.addItem(.separator())
     }
-    if menu.items.last?.isSeparatorItem == true { menu.removeItem(at: menu.items.count - 1) }
+    let settings = NSMenuItem(title: "Monochrome Settings…", action: #selector(openSettings), keyEquivalent: "")
+    settings.target = self
+    menu.addItem(settings)
     menu.popUp(positioning: nil, at: NSPoint(x: caret.frame.minX, y: Self.room), in: content)
   }
+
+  @objc private func openSettings() { SettingsWindow.shared.show() }
 
   @objc private func moveTo(_ item: NSMenuItem) {
     guard let to = item.representedObject as? [String: Int] else { return }

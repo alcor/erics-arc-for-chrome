@@ -1,6 +1,11 @@
 # Links from other apps are routed by rules, with mini browser as the default
 
-A plan for what happens to a URL handed to Monochrome as the default browser: which Chrome profile, which window, and whether it opens as a mini browser, a tab, or in a window already on that site. Nothing here is built; this records the design and the order to build it in.
+What happens to a URL handed to Monochrome as the default browser: which Chrome profile, which window, and whether it opens as a mini browser, a tab, or in a tab already on that site. This was the design; it is built as of November 6, 2026 (`helper/Routes.swift`, `routes.js`), with these departures from the text below:
+
+- Profiles are named as Chrome's Profiles menu shows them, not by directory. The app learns which connection is which profile from Chrome's window titles, which end in the profile's name, so the extension reports nothing about its profile and Chrome's data folder is never read. An unconnected profile is reached by pressing its menu item, not by `--profile-directory`.
+- Destinations name a tab group, not a window. The picker's window names are made from the active tab and change constantly; a group title is stable.
+- `--routes` prints the rules and the match for a given URL. It does not count matches, since the counts live in the running app and the command is a separate process.
+- The README holds the rule format. This document keeps the reasoning.
 
 ## Summary
 

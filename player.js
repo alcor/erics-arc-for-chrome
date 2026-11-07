@@ -20,7 +20,10 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
 const musicGone = id => { music.delete(id); playerUpdate(); };
 chrome.tabs.onRemoved.addListener(musicGone);
 // A new page loading in the tab (not a music site's own in-page navigation); a music site says so again.
-chrome.tabs.onUpdated.addListener((id, change) => { if (change.status === 'loading' && music.has(id)) musicGone(id); });
+chrome.tabs.onUpdated.addListener((id, change) => {
+  if (change.status === 'loading' && music.has(id)) musicGone(id);
+  else if ('audible' in change && music.has(id)) playerUpdate();
+});
 
 async function playerState() {
   if (!music.size) return null;
@@ -52,8 +55,8 @@ const playerResend = () => { playerSent = ''; playerUpdate(); };
 
 let playerQueue = Promise.resolve();
 const playerUpdate = () => (playerQueue = playerQueue.then(playerSync).catch(console.error));
-// Polled as well, for what Chrome has no event for (the sidebar collapsing, sound starting or stopping).
-setInterval(playerUpdate, 500);
+// Polled as well, for the one thing Chrome has no event for: the sidebar collapsing (⌘S).
+setInterval(playerUpdate, 1000);
 chrome.tabs.onActivated.addListener(playerUpdate);
 chrome.windows.onFocusChanged.addListener(playerUpdate);
 chrome.windows.onBoundsChanged.addListener(playerUpdate);

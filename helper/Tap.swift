@@ -30,26 +30,38 @@ final class Tap {
   var onMiniBrowserOpen: (Bool) -> Bool = { _ in false } // ⌘O (false) or ⇧⌘O (true) in a mini browser
   var onProfile: (Int, Int?) -> Void = { _, _ in } // ⌃⌥→ (+1) / ⌃⌥← (-1), or ⌃⌥1…9 as an index
   var switcher: Switcher!
-  private var port: CFMachPort?
+  private var ports: [CFMachPort] = []
   private var walking = false // fallback: a ⌃Tab has been sent since Control went down
 
+  // Two taps. The window server holds every event in an active tap's mask until this process answers,
+  // so the active one carries only what the tap may swallow or rewrite: keys, modifier changes, and
+  // clicks (both halves, since Chrome reads a click's modifiers from the mouse-up). Scrolls, which are
+  // only observed, go through a listen-only tap the server does not wait on.
   func install() -> Bool {
     Tap.shared = self
-    let mask = [CGEventType.keyDown, .flagsChanged, .scrollWheel, .leftMouseDown, .leftMouseUp].reduce(0) { $0 | (1 << $1.rawValue) }
     let callback: CGEventTapCallBack = { _, type, event, _ in Tap.shared.handle(type, event) }
+    let active = Self.mask([.keyDown, .flagsChanged, .leftMouseDown, .leftMouseUp]), observed = Self.mask([.scrollWheel])
     guard let port = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap,
-                                       eventsOfInterest: CGEventMask(mask), callback: callback, userInfo: nil)
+                                       eventsOfInterest: active, callback: callback, userInfo: nil)
     else { return false }
-    self.port = port
-    CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
-    CGEvent.tapEnable(tap: port, enable: true)
+    let listener = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .listenOnly,
+                                     eventsOfInterest: observed, callback: callback, userInfo: nil)
+    for port in [port, listener].compactMap({ $0 }) {
+      CFRunLoopAddSource(CFRunLoopGetMain(), CFMachPortCreateRunLoopSource(nil, port, 0), .commonModes)
+      CGEvent.tapEnable(tap: port, enable: true)
+      ports.append(port)
+    }
     return true
+  }
+
+  private static func mask(_ types: [CGEventType]) -> CGEventMask {
+    types.reduce(0) { $0 | (1 << $1.rawValue) }
   }
 
   func handle(_ type: CGEventType, _ event: CGEvent) -> Unmanaged<CGEvent>? {
     let pass = Unmanaged.passUnretained(event)
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-      if let port { CGEvent.tapEnable(tap: port, enable: true) }
+      for port in ports { CGEvent.tapEnable(tap: port, enable: true) }
       return pass
     }
     let flags = event.flags

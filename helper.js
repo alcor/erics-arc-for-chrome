@@ -37,6 +37,7 @@ async function helperHello() {
     session = crypto.randomUUID();
     await chrome.storage.session.set({ session });
   }
+  faviconSent.clear();
   helperSend({ hello: { session } });
   helperSend({ shortcuts: Object.fromEntries((await chrome.commands.getAll()).map(c => [c.name, c.shortcut])) });
   playerResend();
@@ -46,12 +47,13 @@ async function helperHello() {
 
 function helperMessage(msg) {
   if (msg.activate) helperActivate(msg.activate);
-  else if (msg.open) openMiniBrowser({ url: msg.open });
+  else if (msg.open) routeOpen(msg.open, msg.to).catch(console.error);
   else if (msg.player) playerAction(msg.player);
   else if (msg.mini) miniFromHelper(msg.mini).catch(console.error);
   else if (msg.miniNew) openMiniBrowser();
   else if (msg.scrolled) helperThumbFront();
   else if (msg.miniNext) miniNextUntil = Date.now() + 1500;
+  else if (msg.resend) helperHello(); // the app restarted under a host that stayed up
 }
 
 // The helper's mini browser bar: open in Chrome, move to a window or group, go to an address, or close
@@ -67,14 +69,17 @@ async function miniFromHelper({ window, action, to, text }) {
 
 // mini browser windows: where they are and what's in them, which of them are peek browsers and over which
 // window, and where they can be moved to, for the helper's bar and shade.
-let minisTimer = null;
+// Window events fire per frame of any drag; with no mini browser open there is nothing to send, except
+// once, so the helper hears that the last one closed.
+let minisTimer = null, minisSent = false;
 function helperMinisSoon() {
-  if (!helper || minisTimer) return;
+  if (!helper || minisTimer || (!miniOpen.size && !minisSent)) return;
   minisTimer = setTimeout(() => { minisTimer = null; helperMinis().catch(console.error); }, 50);
 }
 
 async function helperMinis() {
   const { mini, peek } = await miniState();
+  minisSent = Object.keys(mini).length > 0;
   const windows = await chrome.windows.getAll({ populate: true });
   const bounds = w => ({ left: w.left, top: w.top, width: w.width, height: w.height });
   const minis = [];
@@ -110,14 +115,30 @@ function helperMruSoon() {
   mruTimer = setTimeout(() => { mruTimer = null; helperMru().catch(console.error); }, 100);
 }
 
+// A favicon goes over once per tab and page (the helper keeps it); null means the page has none.
+const faviconSent = new Map(); // tabId -> url it was sent for
+let mruSentIds = new Set();
+
 async function helperMru() {
-  const ids = (await mruList()).slice(0, MRU_SENT);
-  const tabs = (await Promise.all(ids.map(id => chrome.tabs.get(id).catch(() => null)))).filter(Boolean);
-  const mru = await Promise.all(tabs.map(async t => ({ id: t.id, windowId: t.windowId, title: t.title || t.url, favicon: await favicon(t.url) })));
-  // This profile's front window, by id and by bounds: the helper has one connection per profile and
-  // matches the bounds against the window in front on screen to know whose tabs ⌃Tab walks.
+  await ready;
+  const ids = mruList().slice(0, MRU_SENT);
+  mruSentIds = new Set(ids);
+  const mru = await Promise.all(ids.map(async id => {
+    const t = tabInfo.get(id);
+    const entry = { id, windowId: t.windowId, title: t.title || t.url };
+    if (faviconSent.get(id) !== t.url) {
+      entry.favicon = await favicon(t.url);
+      faviconSent.set(id, t.url);
+    }
+    return entry;
+  }));
+  // This profile's front window, by id, bounds and tab title: the helper has one connection per
+  // profile and matches these against the window in front on screen to know whose tabs ⌃Tab walks.
+  // Chrome titles a window after its tab and, with more than one profile, the profile's name.
   const front = await chrome.windows.getLastFocused().catch(() => null);
-  helperSend({ mru, window: front?.id ?? -1, front: front && { left: front.left, top: front.top, width: front.width, height: front.height } });
+  const [frontTab] = front ? await chrome.tabs.query({ active: true, windowId: front.id }) : [];
+  helperSend({ mru, window: front?.id ?? -1,
+               front: front && { left: front.left, top: front.top, width: front.width, height: front.height, title: frontTab?.title || '' } });
 }
 
 const favicons = new Map();
@@ -141,11 +162,13 @@ function dataUrl(blob) {
 }
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
-  if ('title' in change || 'favIconUrl' in change) helperMruSoon();
+  // A title ticking in a tab the switcher never shows (a timer, an unread count) is not a reason to resend.
+  if (('title' in change || 'favIconUrl' in change) && mruSentIds.has(tabId)) helperMruSoon();
   if ('title' in change || 'url' in change) helperMinisSoon();
   if (change.status === 'complete') helperThumbSoon(tabId);
 });
 chrome.tabs.onRemoved.addListener(tabId => {
+  faviconSent.delete(tabId);
   helperSend({ closed: tabId });
   helperMruSoon();
 });

@@ -13,7 +13,17 @@ enum Chrome {
   static let features = ["OmniboxForceAllowedToBeDefault"]
 
   static var running: NSRunningApplication? { NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first }
-  static var isFrontmost: Bool { NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleId }
+
+  // Kept from the workspace's activation notices rather than asked per event: the tap consults it on
+  // every keystroke and click.
+  static var isFrontmost: Bool { _ = frontmostObserver; return frontmost }
+  private static var frontmost = false
+  private static let frontmostObserver: Void = {
+    frontmost = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == bundleId
+    NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { note in
+      frontmost = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier == bundleId
+    }
+  }()
 
   // Launches with the flags, or hands URLs to the running one (which opens them as tabs: the extension
   // turns those into mini browsers). activate: bring it to the front either way.
@@ -33,17 +43,7 @@ enum Chrome {
   // instead of silently doing nothing.
   static var warnedPid: pid_t = 0
   static func warnIfStartedWithoutFlags() {
-    guard let running, running.processIdentifier != warnedPid else { return }
-    let ps = Process()
-    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
-    ps.arguments = ["-o", "args=", "-p", String(running.processIdentifier)]
-    let out = Pipe()
-    ps.standardOutput = out
-    guard (try? ps.run()) != nil else { return }
-    let args = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-    let have = args.split(whereSeparator: { $0 == " " || $0 == "\n" })
-      .first { $0.hasPrefix("--enable-features=") }?.dropFirst("--enable-features=".count).split(separator: ",").map(String.init) ?? []
-    guard features.contains(where: { !have.contains($0) }) else { return }
+    guard let running, running.processIdentifier != warnedPid, runningWithFlags() == false else { return }
     warnedPid = running.processIdentifier
     let center = UNUserNotificationCenter.current()
     center.requestAuthorization(options: [.alert]) { granted, _ in
@@ -53,6 +53,21 @@ enum Chrome {
       content.body = "Quit Chrome (⌘Q) and open it from the Dock to turn the address-bar fix back on."
       center.add(UNNotificationRequest(identifier: "launch-flags", content: content, trigger: nil))
     }
+  }
+
+  // nil: not running. false: started some other way, without the flags.
+  static func runningWithFlags() -> Bool? {
+    guard let running else { return nil }
+    let ps = Process()
+    ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+    ps.arguments = ["-o", "args=", "-p", String(running.processIdentifier)]
+    let out = Pipe()
+    ps.standardOutput = out
+    guard (try? ps.run()) != nil else { return nil }
+    let args = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    let have = args.split(whereSeparator: { $0 == " " || $0 == "\n" })
+      .first { $0.hasPrefix("--enable-features=") }?.dropFirst("--enable-features=".count).split(separator: ",").map(String.init) ?? []
+    return !features.contains { !have.contains($0) }
   }
 
   struct Window {
@@ -77,11 +92,55 @@ enum Chrome {
 
   static func windowFrames() -> [CGRect] { windows().map(\.frame) }
 
+  // The on-screen window a frame the extension sent refers to: the same size (it is being dragged) or
+  // the same corner (being resized).
+  static func match(_ sent: CGRect, in windows: [Window]) -> Window? {
+    let near = { (a: CGFloat, b: CGFloat) in abs(a - b) < 2 }
+    return windows.first { (near($0.frame.width, sent.width) && near($0.frame.height, sent.height)) || (near($0.frame.minX, sent.minX) && near($0.frame.minY, sent.minY)) }
+  }
+
   // Window-list coordinates to AppKit's, which count up from the bottom of the main screen.
   static func appKit(_ frame: CGRect) -> NSRect {
     let height = NSScreen.screens.first?.frame.height ?? 0
     return NSRect(x: frame.minX, y: height - frame.maxY, width: frame.width, height: frame.height)
   }
 
-  static var frontWindowFrame: NSRect? { windowFrames().first { $0.width > 200 && $0.height > 200 }.map(appKit) }
+  static var demoAnchor: NSRect? // --demo --backdrop: the panels center on this instead of Chrome's window
+  static var frontWindowFrame: NSRect? { demoAnchor ?? windowFrames().first { $0.width > 200 && $0.height > 200 }.map(appKit) }
+
+  // The focused window's title over Accessibility, split as Chrome composes it: the tab's title, then
+  // " - Google Chrome", then " - " and the profile's name when there is more than one profile.
+  static func frontWindowTitle() -> (tab: String, profile: String)? {
+    guard let running else { return nil }
+    var window: AnyObject?, title: AnyObject?
+    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(running.processIdentifier), kAXFocusedWindowAttribute as CFString, &window) == .success,
+          let window, AXUIElementCopyAttributeValue(window as! AXUIElement, kAXTitleAttribute as CFString, &title) == .success,
+          let full = title as? String, let mark = full.range(of: " - Google Chrome", options: .backwards)
+    else { return nil }
+    let rest = full[mark.upperBound...]
+    return (String(full[..<mark.lowerBound]), rest.hasPrefix(" - ") ? String(rest.dropFirst(3)) : "")
+  }
+}
+
+// One read of the window list per tick, shared by everything that follows a Chrome window: the mini
+// browser bars, the peek shade and the mini player. It reads only while one of them has something to
+// follow and Chrome is in front, at 10 Hz, or 60 Hz while the mouse button is down, since a drag is
+// the one time a window's position matters per frame.
+final class WindowTracker {
+  var needed: () -> Bool = { false }
+  var onTick: ([Chrome.Window], Bool) -> Void = { _, _ in } // Chrome's windows front to back, and whether Chrome is in front
+  var fast = false { didSet { if fast != oldValue { schedule() } } }
+  private var timer: Timer?
+
+  func start() { schedule() }
+
+  private func schedule() {
+    timer?.invalidate()
+    timer = Timer.scheduledTimer(withTimeInterval: fast ? 1.0 / 60 : 1.0 / 10, repeats: true) { [weak self] _ in self?.tick() }
+  }
+
+  private func tick() {
+    let front = Chrome.isFrontmost
+    onTick(front && needed() ? Chrome.windows() : [], front)
+  }
 }

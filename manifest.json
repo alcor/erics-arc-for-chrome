@@ -1,44 +1,115 @@
 {
   "manifest_version": 3,
   "name": "Monochrome",
-  "version": "3.1",
-  "description": "Locked tabs, new tabs at the top, a ⌃Tab switcher, mini browsers and a sidebar player for Chrome, with the Monochrome helper app.",
+  "version": "1.0",
+  "description": "Locked tabs, new tabs at the top, a ⌃Tab switcher with thumbnails, mini and peek browsers, and link routing for Chrome.",
+  "homepage_url": "https://github.com/alcor/monochrome",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArLQ0EHNliKBwkQggWlh+HQnWo9Gl6DL8olNPVvCzDZVVrA0OcbZfwftTAZCtcJhkmZF93bEOMqKeSI1FIGfFZlMq0t+KfQ+m4eM7pFpWqRyIPodlF0io7F7V6dKJCIQgCIGUivmKMOMkNloixgYaC79Du5lrIX+n7feL+EEKzXjoGRUA4tmr8I6HEAspRXG+fp+HTRaYQ5ZXsPyGKBYdAbLmEERIICozQ55Kj7vaW/TTOovu9iCI9GGl10Xc+LFOGeIJvE1FkzrN/0Li+wxvG0iOQwKaNhkRZG9tZwzTfsSOLX/voykqOdMMFa43wlwpIpM6zmU3pLBQzkCfbXwiDwIDAQAB",
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
   "minimum_chrome_version": "121",
-  "permissions": ["tabs", "tabGroups", "storage", "webNavigation", "scripting", "search", "alarms", "nativeMessaging", "favicon"],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js" },
-  "content_scripts": [
-    { "matches": ["https://open.spotify.com/*", "https://music.youtube.com/*", "https://soundcloud.com/*", "https://music.apple.com/*",
-        "https://listen.tidal.com/*", "https://*.bandcamp.com/*", "https://www.pandora.com/*", "https://music.amazon.com/*",
-        "https://www.deezer.com/*"],
-      "js": ["music.js"], "world": "MAIN", "run_at": "document_start" },
-    { "matches": ["https://open.spotify.com/*", "https://music.youtube.com/*", "https://soundcloud.com/*", "https://music.apple.com/*",
-        "https://listen.tidal.com/*", "https://*.bandcamp.com/*", "https://www.pandora.com/*", "https://music.amazon.com/*",
-        "https://www.deezer.com/*"],
-      "js": ["music-relay.js"], "run_at": "document_start" }
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "webNavigation",
+    "scripting",
+    "search",
+    "alarms",
+    "nativeMessaging",
+    "favicon"
   ],
-  "action": { "default_title": "Reset pinned tab" },
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://open.spotify.com/*",
+        "https://music.youtube.com/*",
+        "https://soundcloud.com/*",
+        "https://music.apple.com/*",
+        "https://listen.tidal.com/*",
+        "https://*.bandcamp.com/*",
+        "https://www.pandora.com/*",
+        "https://music.amazon.com/*",
+        "https://www.deezer.com/*"
+      ],
+      "js": [
+        "music.js"
+      ],
+      "world": "MAIN",
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://open.spotify.com/*",
+        "https://music.youtube.com/*",
+        "https://soundcloud.com/*",
+        "https://music.apple.com/*",
+        "https://listen.tidal.com/*",
+        "https://*.bandcamp.com/*",
+        "https://www.pandora.com/*",
+        "https://music.amazon.com/*",
+        "https://www.deezer.com/*"
+      ],
+      "js": [
+        "music-relay.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "Reset pinned tab",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": false
+  },
   "commands": {
     "close-tab": {
       "description": "Close tab (locked tabs come back at their locked URL)"
     },
     "reset-tab": {
-      "suggested_key": { "mac": "MacCtrl+R", "default": "Alt+R" },
+      "suggested_key": {
+        "mac": "MacCtrl+R",
+        "default": "Alt+R"
+      },
       "description": "Reset pinned tab to its pinned URL"
     },
     "repin-current": {
       "description": "Replace pinned URL with current"
     },
     "recent-next": {
-      "suggested_key": { "mac": "MacCtrl+Period", "default": "Ctrl+Period" },
+      "suggested_key": {
+        "mac": "MacCtrl+Period",
+        "default": "Ctrl+Period"
+      },
       "description": "Recently used tab: start (the helper sends this for the first Ctrl+Tab)"
     },
     "recent-continue": {
-      "suggested_key": { "mac": "MacCtrl+Shift+Period", "default": "Ctrl+Shift+Period" },
+      "suggested_key": {
+        "mac": "MacCtrl+Shift+Period",
+        "default": "Ctrl+Shift+Period"
+      },
       "description": "Recently used tab: keep going (the helper sends Ctrl+Shift+Period for more Ctrl+Tabs)"
     },
     "recent-prev": {
-      "suggested_key": { "mac": "MacCtrl+Comma", "default": "Ctrl+Comma" },
+      "suggested_key": {
+        "mac": "MacCtrl+Comma",
+        "default": "Ctrl+Comma"
+      },
       "description": "Recently used tab: step back (the helper sends this for Ctrl+Shift+Tab)"
     },
     "mini-new": {

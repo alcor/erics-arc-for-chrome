@@ -10,11 +10,16 @@
 // - left unfocused for 12 hours, a mini browser closes
 // mini browsers are Chrome popup windows: no tab strip, no sidebar, back with ⌘[.
 //
-// ponytail: links from other apps first land as a tab in the main window and get moved out, so the main
-// window flashes; avoiding that needs a native default-browser shim.
+// Links from other apps come through the helper app, the default browser (helper/App.swift), straight to
+// openMiniBrowser; only without it do they land as a tab in the main window first and get moved out.
 
 const MINI_SIZE = { width: 900, height: 700 };
 const MINI_ARCHIVE_MS = 12 * 60 * 60 * 1000;
+
+// The open mini browsers' window ids, in memory for the checks that run per window event; session
+// storage holds the rest and is read back once when the worker starts.
+const miniOpen = new Set();
+chrome.storage.session.get('mini').then(({ mini = {} }) => { for (const id of Object.keys(mini)) miniOpen.add(+id); });
 
 // Session-state writes go through run() (background.js) so focus events can't clobber a new window.
 async function miniState() {
@@ -37,6 +42,7 @@ async function miniBounds() {
 async function openMiniBrowser({ url, tabId, bounds } = {}) {
   const source = tabId ? { tabId } : { url: url || chrome.runtime.getURL('mini-browser.html') };
   const w = await chrome.windows.create({ ...source, ...(bounds || await miniBounds()), type: 'popup', focused: true });
+  miniOpen.add(w.id);
   await run(async () => {
     const { mini } = await miniState();
     mini[w.id] = Date.now();
@@ -186,6 +192,7 @@ async function miniFocused(windowId) {
 chrome.windows.onFocusChanged.addListener(windowId => run(() => miniFocused(windowId)));
 
 chrome.windows.onRemoved.addListener(windowId => run(async () => {
+  miniOpen.delete(windowId);
   const { mini, peek } = await miniState();
   if (!(windowId in mini)) return;
   delete mini[windowId];
@@ -195,12 +202,18 @@ chrome.windows.onRemoved.addListener(windowId => run(async () => {
   if (over) await dim(over.tabId, false);
 }));
 
-// A peek's size comes from its window each time; only a mini browser you resized is remembered.
-chrome.windows.onBoundsChanged.addListener(async w => {
-  const { mini, peek } = await miniState();
-  if (!(w.id in mini) || w.id in peek) return;
-  const { left, top, width, height } = w;
-  await chrome.storage.local.set({ miniBounds: { left, top, width, height } });
+// A peek's size comes from its window each time; only a mini browser you resized is remembered, once
+// the drag has settled rather than per frame.
+let boundsTimer = null;
+chrome.windows.onBoundsChanged.addListener(w => {
+  if (!miniOpen.has(w.id)) return;
+  clearTimeout(boundsTimer);
+  boundsTimer = setTimeout(async () => {
+    const { peek } = await miniState();
+    if (w.id in peek) return;
+    const { left, top, width, height } = w;
+    await chrome.storage.local.set({ miniBounds: { left, top, width, height } });
+  }, 300);
 });
 
 chrome.alarms.create('mini-archive', { periodInMinutes: 30 });

@@ -14,7 +14,8 @@ import ServiceManagement
 final class Connection {
   let peer: LineSocket
   var tabs: [TabInfo] = []
-  var front: (id: Int, frame: CGRect)?
+  var front: (id: Int, frame: CGRect, title: String)?
+  var profile: String? // the name Chrome puts in this profile's window titles, once seen
   var minis: [MiniBrowser] = []
   var targets: [Target] = []
   init(peer: LineSocket) { self.peer = peer }
@@ -27,6 +28,7 @@ final class App: NSObject, NSApplicationDelegate {
   let minis = MiniBrowsers()
   let profiles = Profiles()
   let tap = Tap()
+  let tracker = WindowTracker()
   var server: SocketServer?
   var connections: [Connection] = []
   var playerOwner: Connection?
@@ -37,6 +39,13 @@ final class App: NSObject, NSApplicationDelegate {
     signal(SIGPIPE, SIG_IGN)
     NSApp.setActivationPolicy(.accessory)
     try? SMAppService.mainApp.register()
+    NSApp.mainMenu = mainMenu()
+    SettingsWindow.shared.connectionsSummary = { [weak self] in
+      guard let self, !connections.isEmpty else { return "Not connected" }
+      let names = connections.compactMap(\.profile)
+      let count = "\(connections.count) profile\(connections.count == 1 ? "" : "s")"
+      return "Connected in " + (names.count == connections.count ? names.joined(separator: ", ") : count)
+    }
 
     tap.switcher = switcher
     tap.useSwitcher = { [weak self] in
@@ -60,7 +69,10 @@ final class App: NSObject, NSApplicationDelegate {
       scrollTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in self?.send(["scrolled": true], to: self?.frontConnection) }
     }
     tap.onAltCommandClick = { [weak self] in self?.send(["miniNext": true], to: self?.frontConnection) }
-    tap.onMouse = { [weak self] down in self?.minis.mouseDown = down }
+    tap.onMouse = { [weak self] down in
+      self?.minis.mouseDown = down
+      self?.tracker.fast = down
+    }
     tap.onCommandL = { [weak self] in
       guard let self, let front = minis.frontWindow else { return false }
       minis.showAddress(front.id)
@@ -80,7 +92,15 @@ final class App: NSObject, NSApplicationDelegate {
       guard let self else { return }
       if let index { profiles.go(to: index) } else { profiles.cycle(step) }
     }
-    Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.minis.follow() }
+    tracker.needed = { [weak self] in
+      guard let self else { return false }
+      return !minis.windows.isEmpty || player.wantsFollowing
+    }
+    tracker.onTick = { [weak self] windows, front in
+      self?.minis.follow(windows, front: front)
+      self?.player.follow(windows, front: front)
+    }
+    tracker.start()
 
     server = SocketServer(path: Socket.path, queue: .main)
     if server == nil { log.error("socket: could not listen at \(Socket.path, privacy: .public)") }
@@ -89,6 +109,7 @@ final class App: NSObject, NSApplicationDelegate {
       let connection = Connection(peer: peer)
       connections.append(connection)
       log.info("host: connected (\(self.connections.count))")
+      send(["resend": true], to: connection) // this app may have restarted under a host that is already up
       peer.onLine = { [weak self, weak connection] line in
         guard let connection, let message = JSONLine.decode(line) else { return }
         self?.receive(message, from: connection)
@@ -109,34 +130,125 @@ final class App: NSObject, NSApplicationDelegate {
     if Chrome.running == nil { Chrome.open(activate: false) } else { Chrome.warnIfStartedWithoutFlags() }
   }
 
-  // The Dock icon (and the login item, on a Mac where the app was already running).
+  // A reopen from the Dock, where the tile stands in for Chrome, opens Chrome. From anywhere else
+  // (the app double-clicked in the Finder, `open -a Monochrome`) it opens the settings window.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-    Chrome.open(activate: true)
-    Chrome.warnIfStartedWithoutFlags()
+    let from = Self.currentEventSender()
+    log.info("reopen from \(from ?? "?", privacy: .public)")
+    if from == "com.apple.dock" {
+      Chrome.open(activate: true)
+      Chrome.warnIfStartedWithoutFlags()
+    } else {
+      SettingsWindow.shared.show()
+    }
     return false
   }
 
-  // Links from other apps, as the default browser: to the profile whose window is in front.
+  // The bundle id of the app that sent the Apple event being handled, when it is still running.
+  static func currentEventSender() -> String? {
+    let pid = NSAppleEventManager.shared().currentAppleEvent?.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
+    return pid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+  }
+
+  // Links from other apps, as the default browser. The open event names the sender; a rule
+  // (Routes.swift) may send the link to another app or profile; otherwise it goes to the profile whose
+  // window is in front, with the rule's destination inside it, or as a mini browser.
   func application(_ application: NSApplication, open urls: [URL]) {
     let web = urls.filter { ["http", "https"].contains($0.scheme?.lowercased()) }
     guard !web.isEmpty else { return }
-    if let front = frontConnection {
-      for url in web { send(["open": url.absoluteString], to: front) }
+    let sender = Self.currentEventSender()
+    for url in web { route(url, from: sender) }
+  }
+
+  func route(_ url: URL, from sender: String?) {
+    let rule = Routes.route(url, from: sender)
+    log.info("route: \(url.host ?? "", privacy: .public) from \(sender ?? "?", privacy: .public): \(rule?.description ?? "no rule", privacy: .public)")
+    let to = rule?.to ?? [:]
+    if let app = to["app"] as? String {
+      guard let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app) else {
+        log.error("route: no app \(app, privacy: .public); opening in Chrome instead")
+        return deliver(url, to: [:], over: frontConnection)
+      }
+      return NSWorkspace.shared.open([url], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
+    }
+    if let profile = to["profile"] as? String { return deliver(url, to: to, profile: profile) }
+    deliver(url, to: to, over: frontConnection)
+  }
+
+  // Over a profile's connection when there is one; else Chrome gets the URL as a tab and the extension
+  // there, if any, makes a mini browser of it.
+  func deliver(_ url: URL, to: [String: Any], over connection: Connection?) {
+    if let connection {
+      send(["open": url.absoluteString, "to": to.filter { !["profile", "app"].contains($0.key) }], to: connection)
       Chrome.running?.activate()
     } else {
-      Chrome.open(web, activate: true)
+      Chrome.open([url], activate: true)
     }
   }
 
-  // The connection whose reported front window is the Chrome window in front on screen; failing a
-  // match, the first one.
+  // A named profile: its connection when it is known by name. Otherwise Chrome's own switch (the
+  // Profiles menu item) brings that profile's window forward, opening one if it has none, and the
+  // extension there connects and reports a window carrying the name. Up to three seconds for that;
+  // then the URL goes to Chrome, which opens it in the profile now in front.
+  func deliver(_ url: URL, to: [String: Any], profile name: String, tries: Int = 12) {
+    learnProfiles()
+    if let known = connections.first(where: { $0.profile == name }) { return deliver(url, to: to, over: known) }
+    if tries == 12 {
+      let list = Profiles.read()
+      guard let index = list.firstIndex(where: { $0.name == name }) else {
+        log.error("route: no profile named \(name, privacy: .public); using the front one")
+        return deliver(url, to: to, over: frontConnection)
+      }
+      profiles.go(to: index, in: list)
+    }
+    guard tries > 0 else { return Chrome.open([url], activate: true) }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in self?.deliver(url, to: to, profile: name, tries: tries - 1) }
+  }
+
+  // Every Chrome window's title names its profile; a connection whose reported front tab title is the
+  // only one matching a window learns that name.
+  var lastLearn = Date.distantPast
+  func learnProfiles() {
+    // At most every two seconds: with a single profile the titles carry no name, and this would read
+    // the window list on every message for nothing.
+    guard connections.contains(where: { $0.profile == nil && $0.front != nil }), Date().timeIntervalSince(lastLearn) > 2,
+          let running = Chrome.running else { return }
+    lastLearn = Date()
+    var list: AnyObject?
+    guard AXUIElementCopyAttributeValue(AXUIElementCreateApplication(running.processIdentifier), kAXWindowsAttribute as CFString, &list) == .success,
+          let windows = list as? [AXUIElement] else { return }
+    for window in windows {
+      var value: AnyObject?
+      guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value) == .success, let full = value as? String,
+            let mark = full.range(of: " - Google Chrome - ", options: .backwards) else { continue }
+      let tab = String(full[..<mark.lowerBound]), profile = String(full[mark.upperBound...])
+      let candidates = connections.filter { $0.profile == nil && $0.front?.title == tab }
+      if candidates.count == 1, !connections.contains(where: { $0.profile == profile }) {
+        candidates[0].profile = profile
+        log.info("profile: connection learned as \(profile, privacy: .public)")
+      }
+    }
+  }
+
+  // The connection whose reported front window is the Chrome window in front on screen. With one
+  // connection there is nothing to decide. With more, the frame narrows it, and the window's title
+  // settles it: two profiles can show same-sized windows, so each connection learns its profile's name
+  // the first time it alone matches a front window, and the name decides from then on.
   var frontConnection: Connection? {
-    guard let front = Chrome.windows().first else { return connections.first }
-    let near = { (a: CGFloat, b: CGFloat) in abs(a - b) < 2 }
-    return connections.first { c in
-      guard let f = c.front?.frame else { return false }
-      return (near(f.width, front.frame.width) && near(f.height, front.frame.height)) || (near(f.minX, front.frame.minX) && near(f.minY, front.frame.minY))
-    } ?? connections.first
+    guard connections.count > 1, let front = Chrome.windows().first else { return connections.first }
+    let byFrame = connections.filter { c in c.front.map { Chrome.match($0.frame, in: [front]) != nil } ?? false }
+    let title = Chrome.frontWindowTitle()
+    if let title, !title.profile.isEmpty {
+      if let known = connections.first(where: { $0.profile == title.profile }) { return known }
+      let byTitle = byFrame.filter { $0.front?.title == title.tab }
+      if byTitle.count == 1 || byFrame.count == 1 {
+        let one = (byTitle.first ?? byFrame.first)!
+        one.profile = title.profile
+        log.info("profile: connection learned as \(title.profile, privacy: .public)")
+        return one
+      }
+    }
+    return byFrame.first ?? connections.first
   }
 
   func send(_ message: [String: Any], to connection: Connection?) {
@@ -152,12 +264,19 @@ final class App: NSObject, NSApplicationDelegate {
     }
     if let mru = message["mru"] as? [[String: Any]] {
       log.info("mru: \(mru.count) tabs")
+      let had = Dictionary(connection.tabs.map { ($0.id, $0.favicon) }, uniquingKeysWith: { a, _ in a })
       connection.tabs = mru.compactMap { tab in
         guard let id = tab["id"] as? Int, let windowId = tab["windowId"] as? Int else { return nil }
-        return TabInfo(id: id, windowId: windowId, title: tab["title"] as? String ?? "", favicon: image(tab["favicon"] as? String))
+        // A favicon comes once per tab and page; after that the message leaves it out.
+        let favicon = tab["favicon"] is NSNull ? nil : (tab["favicon"] as? String).map(image) ?? had[id] ?? nil
+        return TabInfo(id: id, windowId: windowId, title: tab["title"] as? String ?? "", favicon: favicon)
       }
-      if let id = message["window"] as? Int, let frame = (message["front"] as? [String: Any]).flatMap(rect) { connection.front = (id, frame) }
+      if let id = message["window"] as? Int, let front = message["front"] as? [String: Any], let frame = rect(front) {
+        connection.front = (id, frame, front["title"] as? String ?? "")
+      }
       merge()
+      let listed = Set(connections.flatMap(\.tabs).map(\.id))
+      switcher.thumbs = switcher.thumbs.filter { listed.contains($0.key) } // a tab that drops off every list is captured again when next in front
     }
     if let thumb = message["thumb"] as? [String: Any], let id = thumb["id"] as? Int, let image = image(thumb["data"] as? String) {
       log.info("thumb: tab \(id)")
@@ -188,6 +307,7 @@ final class App: NSObject, NSApplicationDelegate {
       minis.shortcuts = shortcuts
     }
     if let menu = message["miniMenu"] as? Int { minis.showMenu(menu) }
+    if message["settings"] != nil { SettingsWindow.shared.show() } // --settings, over the socket
     if message.keys.contains("player") {
       let state = (message["player"] as? [String: Any]).flatMap { try? JSONSerialization.data(withJSONObject: $0) }
         .flatMap { try? JSONDecoder().decode(PlayerState.self, from: $0) }
@@ -196,10 +316,40 @@ final class App: NSObject, NSApplicationDelegate {
     }
   }
 
-  // The switcher and the bars see every profile's tabs and mini browsers together.
+  // The menu bar, seen while the settings window has the app in the Dock: Settings and Quit, and an
+  // Edit menu so the rule fields take the standard keys.
+  func mainMenu() -> NSMenu {
+    let main = NSMenu()
+    let app = NSMenu()
+    app.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
+    app.addItem(.separator())
+    app.addItem(withTitle: "Quit Monochrome", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    let file = NSMenu(title: "File")
+    file.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+    let edit = NSMenu(title: "Edit")
+    edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+    edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+    edit.addItem(.separator())
+    edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+    edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+    edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+    edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+    for menu in [app, file, edit] {
+      let item = NSMenuItem()
+      item.submenu = menu
+      main.addItem(item)
+    }
+    return main
+  }
+
+  @objc func showSettings() { SettingsWindow.shared.show() }
+
+  // The switcher and the bars see every profile's tabs and mini browsers together; each mini browser
+  // carries its profile's name for its bar, once learned.
   func merge() {
+    learnProfiles()
     switcher.tabs = connections.flatMap(\.tabs)
-    minis.windows = connections.flatMap(\.minis)
+    minis.windows = connections.flatMap { c in c.minis.map { var m = $0; m.profile = c.profile; return m } }
   }
 
   // Window bounds arrive as Chrome sends them: left, top, width, height.

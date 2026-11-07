@@ -77,18 +77,24 @@ mkdir -p "$HOME/Applications"
 rm -rf "$app"
 cp -R "$build" "$app"
 
-# An unpacked extension's ID is the first 32 hex digits of its folder path's SHA-256, written with a-p for 0-f.
-id=$(printf %s "$(dirname "$here")" | shasum -a 256 | head -c 32 | tr 0-9a-f a-p)
+# The extension's ID comes from the public key in its manifest (the first 32 hex digits of the key's
+# SHA-256, written with a-p for 0-f), so it is the same unpacked from any folder and from the Web Store.
+id=$(python3 -I -c 'import base64, hashlib, json, sys
+key = base64.b64decode(json.load(open(sys.argv[1]))["key"])
+print("".join(chr(97 + int(c, 16)) for c in hashlib.sha256(key).hexdigest()[:32]))' "$(dirname "$here")/manifest.json")
+# The Web Store's copy has the store's ID (store/id); both are allowed, so either copy reaches the helper.
+store_id=$(cat "$(dirname "$here")/store/id" 2>/dev/null || true)
 mkdir -p "$(dirname "$host")"
-python3 -I - "$host" "$app/Contents/Resources/host.sh" "$id" <<'EOF'
+python3 -I - "$host" "$app/Contents/Resources/host.sh" "$id" "$store_id" <<'EOF'
 import json, sys
-host, path, id = sys.argv[1:]
+host, path, id, store_id = sys.argv[1:]
+origins = [f'chrome-extension://{i}/' for i in dict.fromkeys([id, store_id]) if i]
 with open(host, 'w') as f:
     json.dump({'name': 'monochrome_helper', 'description': "Monochrome: helper app",
-               'path': path, 'type': 'stdio', 'allowed_origins': [f'chrome-extension://{id}/']}, f, indent=2)
+               'path': path, 'type': 'stdio', 'allowed_origins': origins}, f, indent=2)
 EOF
 rm -f "$(dirname "$host")/erics_arc_player.json" "$(dirname "$host")/erics_arc_helper.json"
-echo "helper: registered with Chrome for extension $id"
+echo "helper: registered with Chrome for extension $id${store_id:+ and the store copy $store_id}"
 
 # Dock: swap a pinned Google Chrome icon (which would start Chrome without the flags) for the helper.
 dock_bak="$HOME/Library/Preferences/com.apple.dock.plist.pre-monochrome.bak"

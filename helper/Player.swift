@@ -18,7 +18,7 @@ struct PlayerState: Decodable {
 }
 
 // Takes the first click even though the panel never becomes the active window.
-final class Button: NSButton {
+final class PlayerButton: NSButton {
   override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 final class ClickArea: NSView {
@@ -35,7 +35,7 @@ final class Player: NSObject {
   let art = NSImageView()
   let title = NSTextField(labelWithString: "")
   let artist = NSTextField(labelWithString: "")
-  var playButton: Button!
+  var playButton: PlayerButton!
   var state: PlayerState?
   var artworkURL: String?
 
@@ -101,11 +101,10 @@ final class Player: NSObject {
       close.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
     ])
 
-    Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.follow() }
   }
 
-  func button(_ symbol: String, _ action: String, size: CGFloat = 15) -> Button {
-    let b = Button(title: "", target: self, action: #selector(pressed))
+  func button(_ symbol: String, _ action: String, size: CGFloat = 15) -> PlayerButton {
+    let b = PlayerButton(title: "", target: self, action: #selector(pressed))
     b.identifier = NSUserInterfaceItemIdentifier(action)
     b.isBordered = false
     b.image = NSImage(systemSymbolName: symbol, accessibilityDescription: action)?
@@ -114,11 +113,11 @@ final class Player: NSObject {
     return b
   }
 
-  @objc func pressed(_ sender: Button) { onAction(sender.identifier!.rawValue) }
+  @objc func pressed(_ sender: PlayerButton) { onAction(sender.identifier!.rawValue) }
 
   func apply(_ s: PlayerState?) {
     state = s
-    guard let s else { return follow() }
+    guard let s else { return layout() }
     title.stringValue = s.title ?? ""
     artist.stringValue = s.artist ?? ""
     let symbol = s.playing == true ? "pause.fill" : "play.fill"
@@ -136,22 +135,26 @@ final class Player: NSObject {
         }.resume()
       }
     }
-    follow()
+    layout()
+  }
+
+  var wantsFollowing: Bool { state?.show == true }
+  private var onScreen: [Chrome.Window] = []
+  private var front = false
+
+  // Each tick of the window tracker: Chrome's windows on screen and whether Chrome is in front.
+  func follow(_ onScreen: [Chrome.Window], front: Bool) {
+    self.onScreen = onScreen
+    self.front = front
+    layout()
   }
 
   // Keeps the panel on the bottom of the sidebar; hides it when Chrome isn't the app in front.
-  func follow() {
-    guard let s = state, s.show, let w = s.window, let sidebar = s.sidebar,
-          let chrome = Chrome.running, Chrome.isFrontmost, let primary = NSScreen.screens.first
-    else { return panel.orderOut(nil) }
-    let sent = CGRect(x: w.left, y: w.top, width: w.width, height: w.height)
-    let near = { (a: CGFloat, b: CGFloat) in abs(a - b) < 2 }
-    let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
-    let frame = windows.lazy
-      .filter { $0[kCGWindowOwnerPID as String] as? pid_t == chrome.processIdentifier && $0[kCGWindowLayer as String] as? Int == 0 }
-      .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } }
-      .first { (near($0.width, sent.width) && near($0.height, sent.height)) || (near($0.minX, sent.minX) && near($0.minY, sent.minY)) }
-    guard let frame else { return panel.orderOut(nil) } // minimized, or on another Space
+  private func layout() {
+    guard let s = state, s.show, let w = s.window, let sidebar = s.sidebar, front, let primary = NSScreen.screens.first,
+          let window = Chrome.match(CGRect(x: w.left, y: w.top, width: w.width, height: w.height), in: onScreen)
+    else { return panel.orderOut(nil) } // minimized, on another Space, or nothing to show
+    let frame = window.frame
     // Window bounds count down from the top of the main screen; AppKit counts up from its bottom.
     let rect = NSRect(x: frame.minX + Self.inset, y: primary.frame.height - frame.maxY + Self.inset,
                       width: sidebar - 2 * Self.inset, height: Self.height)
