@@ -67,14 +67,12 @@ Works with Chrome's vertical tabs. Nothing is added to the window, and nothing l
 
 ## Test instructions
 
-No account or sign-in. The extension works on its own for locked tabs, new tabs at the top, ⌃Tab by recent use and mini browsers; the rest of the features need the free Monochrome app for macOS running alongside it.
-
 ```
-No account is needed. The extension works on its own: pin a tab and close it to see it come back; press ⌃. to go to the tab you used last; set a shortcut for "New mini browser" under chrome://extensions/shortcuts to open a small window.
+No account is needed. On its own the extension does locked tabs (pin a tab, close it, it comes back), ⌃Tab by recent use (⌃.) and mini browsers.
 
-The thumbnail switcher, the bar on mini browsers, the peek shade, profile switching and link routing come from a companion macOS app, Monochrome, which talks to the extension over native messaging. To test those, on a Mac: download Monochrome.app from https://github.com/alcor/monochrome/releases/latest, move it to Applications and open it (it is signed with a development certificate and not notarized, so the first open is right-click, Open), allow Accessibility when it asks, and quit and reopen Chrome from the app's Dock icon. Then hold Control after pressing ⌃Tab for the switcher, and press ⌥⇧N from any app for a mini browser with a native bar.
+The thumbnail switcher, the mini browser bar, the peek shade, profile switching and link routing need the free companion app for macOS, which talks to the extension over native messaging: https://github.com/alcor/monochrome/releases/latest. Unzip, move Monochrome.app to Applications, right-click and Open (it is not notarized), allow Accessibility, then quit Chrome and reopen it from the app's Dock icon. Hold Control after ⌃Tab for the switcher; ⌥⇧N from any app opens a mini browser.
 
-Without the app, everything the app would draw is simply absent; nothing in the extension errors or asks for it.
+Without the app, nothing errors; the app's features are simply absent.
 ```
 
 ## Before submitting
