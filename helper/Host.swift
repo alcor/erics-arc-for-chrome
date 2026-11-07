@@ -32,7 +32,7 @@ enum Host {
       peer.start(queue: queue)
       return
     }
-    if !triedLaunch && ProcessInfo.processInfo.environment["ARC_HELPER_NO_LAUNCH"] == nil {
+    if !triedLaunch && ProcessInfo.processInfo.environment["MONOCHROME_NO_LAUNCH"] == nil {
       triedLaunch = true
       let open = Process()
       open.executableURL = URL(fileURLWithPath: "/usr/bin/open")

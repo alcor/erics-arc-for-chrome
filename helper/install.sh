@@ -5,7 +5,7 @@
 # line tools. Safe to re-run; re-run after moving the repo, since the extension's ID comes from its folder.
 #
 # Signing: macOS ties the Accessibility grant (for the ⌃Tab tap) to the app's signature. Signed with a
-# Developer ID, that's the team and bundle id and survives rebuilds; ad-hoc signed, it's a hash of the
+# certificate, that's the team and bundle id and survives rebuilds; ad-hoc signed, it's a hash of the
 # binary and every rebuild has to be allowed again in System Settings.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd -P)
@@ -13,7 +13,7 @@ name="Monochrome"
 build="$here/build/$name.app"
 app="$HOME/Applications/$name.app"
 bundle_id="local.monochrome"
-host="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/erics_arc_helper.json"
+host="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/monochrome_helper.json"
 
 swiftc --version >/dev/null 2>&1 || { echo "helper: needs the command line tools: xcode-select --install"; exit 1; }
 [ -d "/Applications/Google Chrome.app" ] || { echo "Install Google Chrome first: https://www.google.com/chrome/"; exit 1; }
@@ -31,9 +31,27 @@ if ! xcrun actool "$here/Monochrome.icon" --compile "$build/Contents/Resources" 
   cp "/Applications/Google Chrome.app/Contents/Resources/app.icns" "$build/Contents/Resources/Monochrome.icns"
   echo "helper: icon not compiled (needs Xcode), using Chrome's"
 fi
-identity=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)
+# A certificate from the keychain, so the Accessibility grant survives rebuilds: MONOCHROME_SIGN_IDENTITY
+# if set, else the one used last time (kept in Application Support, since switching certificates
+# costs a grant), else a Developer ID, else an Apple Development certificate (fine for this Mac; other
+# Macs would need Developer ID), else ad hoc.
+support="$HOME/Library/Application Support/$name"
+mkdir -p "$support"
+identities=$(security find-identity -v -p codesigning 2>/dev/null)
+identity=${MONOCHROME_SIGN_IDENTITY:-$(cat "$support/identity" 2>/dev/null || true)}
+if [ -n "$identity" ] && ! printf %s "$identities" | grep -qF "\"$identity\""; then
+  echo "helper: no certificate named \"$identity\" in the keychain"
+  identity=""
+fi
+[ -n "$identity" ] || identity=$(printf %s "$identities" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+[ -n "$identity" ] || identity=$(printf %s "$identities" | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"')
 codesign --force --deep --sign "${identity:--}" "$build"
-echo "helper: built, signed ${identity:+with $identity}${identity:-ad hoc (Accessibility has to be allowed again after each rebuild)}"
+if [ -n "$identity" ]; then
+  printf %s "$identity" > "$support/identity"
+  echo "helper: built, signed with $identity"
+else
+  echo "helper: built, signed ad hoc (Accessibility has to be allowed again after each rebuild)"
+fi
 
 # Replace the installed copy. A running one is quit first so the new one is what starts. An earlier
 # version of the app was called Arc for Chrome; its login item, socket and app go too.
@@ -47,6 +65,14 @@ fi
 osascript -e "tell application id \"$bundle_id\" to quit" >/dev/null 2>&1 || true
 pkill -x Monochrome 2>/dev/null || true
 sleep 0.5
+# Ad hoc, macOS ties the Accessibility grant to the code hash. If the build changed, the old entry is
+# dead and toggling it does nothing; clearing it makes the app's one prompt at launch the one that
+# counts. Signed with a certificate, the grant follows the signer and bundle id and is left alone.
+cdhash() { codesign -dvvv "$1" 2>&1 | sed -n "s/^CDHash=//p"; }
+if [ -z "$identity" ] && [ -d "$app" ] && [ "$(cdhash "$app")" != "$(cdhash "$build")" ]; then
+  tccutil reset Accessibility "$bundle_id" >/dev/null 2>&1 || true
+  echo "helper: the app changed, so macOS will ask for Accessibility again"
+fi
 mkdir -p "$HOME/Applications"
 rm -rf "$app"
 cp -R "$build" "$app"
@@ -58,10 +84,10 @@ python3 -I - "$host" "$app/Contents/Resources/host.sh" "$id" <<'EOF'
 import json, sys
 host, path, id = sys.argv[1:]
 with open(host, 'w') as f:
-    json.dump({'name': 'erics_arc_helper', 'description': "Eric's Monochrome: helper app",
+    json.dump({'name': 'monochrome_helper', 'description': "Monochrome: helper app",
                'path': path, 'type': 'stdio', 'allowed_origins': [f'chrome-extension://{id}/']}, f, indent=2)
 EOF
-rm -f "$(dirname "$host")/erics_arc_player.json"
+rm -f "$(dirname "$host")/erics_arc_player.json" "$(dirname "$host")/erics_arc_helper.json"
 echo "helper: registered with Chrome for extension $id"
 
 # Dock: swap a pinned Google Chrome icon (which would start Chrome without the flags) for the helper.
@@ -101,4 +127,4 @@ done
 if in_dock; then echo "dock: $name icon in place"; else echo "dock: icon didn't stick; drag $app into the Dock"; fi
 
 open "$app"
-echo "installed: $app (allow it under System Settings → Privacy & Security → Accessibility when asked)"
+echo "installed: $app (allow it under System Settings → Privacy & Security → Accessibility if asked)"

@@ -12,7 +12,7 @@ osascript -e 'tell application id "local.monochrome" to quit' >/dev/null 2>&1 ||
 pkill -x Monochrome 2>/dev/null || true
 [ -x "$app/Contents/MacOS/Monochrome" ] && "$app/Contents/MacOS/Monochrome" --unregister 2>/dev/null || true
 rm -rf "$app" "$HOME/Library/Application Support/Monochrome" "$HOME/Applications/Arc for Chrome.app" "$HOME/Library/Application Support/Arc for Chrome"
-rm -f "$hosts/erics_arc_helper.json" "$hosts/erics_arc_player.json"
+rm -f "$hosts/monochrome_helper.json" "$hosts/erics_arc_player.json"
 
 launcher_agent="$HOME/Library/LaunchAgents/local.arc-for-chrome.launcher.plist"
 launchctl bootout "gui/$(id -u)" "$launcher_agent" 2>/dev/null || true

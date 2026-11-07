@@ -1,4 +1,4 @@
-// Sidebar mini player, like Arc's: while a music site (music.js) has a track loaded and you're on
+// Sidebar mini player: while a music site (music.js) has a track loaded and you're on
 // another tab, a small player with play/pause, next and previous sits over the bottom of the vertical
 // tab sidebar; clicking the track goes to its tab, and × hides it until you've been back to that tab.
 // Chrome doesn't let extensions draw in its tab strip, so the player is a panel of the helper app

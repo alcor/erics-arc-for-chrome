@@ -1,4 +1,4 @@
-// Arc-style locked tabs. A tab is locked when it's pinned or sits in one of LOCKED_GROUPS; it
+// Locked tabs. A tab is locked when it's pinned or sits in one of LOCKED_GROUPS; it
 // remembers the URL it had when it got locked. Closing it (⌘W, middle-click) puts it back at that
 // URL in the same spot; ⌃R or the toolbar button resets it in place. Unpin it or drag it out of the
 // group first to really close it.
@@ -73,10 +73,8 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
     const group = tab.groupId === -1 ? null : await chrome.tabGroups.get(tab.groupId);
     const isLocked = tab.pinned || LOCKED_GROUPS.includes(group?.title);
     await sync(p => { if (isLocked) p[tabId] ??= tab.url || tab.pendingUrl; else delete p[tabId]; });
-    // The tab's content script (little-click.js) catches new-tab links in locked tabs; it asks once per
-    // page load and hears about changes here. (A group renamed to or from CoreCore isn't pushed; those
-    // tabs fall back to the tab-then-Peek path until they reload.)
-    chrome.tabs.sendMessage(tabId, { little: 'locked', value: isLocked }).catch(() => {});
+    if (isLocked) injectPeekCatch(tabId);
+    else chrome.tabs.sendMessage(tabId, { mini: 'locked', value: false }).catch(() => {});
   });
 });
 
@@ -104,10 +102,10 @@ chrome.tabs.onRemoved.addListener((tabId, { isWindowClosing }) => {
 });
 
 // New tabs open at the top of the tab list, just under the locked tabs (pinned, then the CoreCore
-// group), like Arc's Today list. A tab opened from a link in a normal tab stays where Chrome puts
+// group). A tab opened from a link in a normal tab stays where Chrome puts
 // it, right after that tab. One opened in the background from a locked tab goes to the top, and if
 // Chrome dropped it into the locked group it's taken out, so it doesn't get locked; one opened in the
-// foreground from a locked tab becomes a Peek (little-arc.js). Tabs in other groups are left alone.
+// foreground from a locked tab becomes a peek (mini-browser.js). Tabs in other groups are left alone.
 const STARTUP_GRACE_MS = 5000; // session restore recreates every tab; leave those where they are
 let browserStarted = 0;
 let recreating = 0; // locked tabs we're putting back stay where they're put
@@ -128,17 +126,38 @@ async function topIndex(windowId, exceptTabId) {
     .reduce((top, t) => Math.max(top, t.index + 1), 0);
 }
 
+// peek's click catch (peek-click.js, and peek-open.js in the page's world) runs only in locked
+// tabs: put there when a tab locks and on each navigation of a locked tab. (A group renamed to or from
+// CoreCore isn't noticed; those tabs fall back to the tab-then-peek path until they navigate.)
+async function injectPeekCatch(tabId, frameId) {
+  const target = frameId === undefined ? { tabId, allFrames: true } : { tabId, frameIds: [frameId] };
+  await chrome.scripting.executeScript({ target, files: ['peek-click.js'] }).catch(() => {});
+  await chrome.scripting.executeScript({ target, files: ['peek-open.js'], world: 'MAIN' }).catch(() => {});
+}
+chrome.webNavigation.onCommitted.addListener(async d => {
+  if (await isLocked(d.tabId)) injectPeekCatch(d.tabId, d.frameId);
+});
+
+// ⌥⌘-click on a link: the helper's tap turns it into ⌘-click (a background tab) and says so, and that
+// tab becomes a mini browser.
+let miniNextUntil = 0;
+
 chrome.tabs.onCreated.addListener(created => {
   if (recreating || created.pinned || starting()) return;
   run(async () => {
     const tab = await chrome.tabs.get(created.id).catch(() => null);
     if (!tab || tab.pinned) return;
+    if (!tab.active && miniNextUntil > Date.now()) {
+      miniNextUntil = 0;
+      openMiniBrowser({ tabId: tab.id }).catch(console.error); // queues its own run(): don't wait for it inside this one
+      return;
+    }
     if ((await chrome.windows.get(tab.windowId)).type !== 'normal') return;
     // Chrome records an opener for ⌘T too; only a link (not the New Tab page) stays by its opener.
     const newTabPage = /^chrome:\/\/new-?tab/.test(created.pendingUrl || created.url);
     if (tab.openerTabId && !newTabPage && !(await isLocked(tab.openerTabId))) return;
     if (tab.openerTabId && !newTabPage && tab.active) { // queues its own run(): don't wait for it inside this one
-      openPeek({ tabId: tab.id }, { id: tab.openerTabId, windowId: tab.windowId }).catch(console.error);
+      openPeekBrowser({ tabId: tab.id }, { id: tab.openerTabId, windowId: tab.windowId }).catch(console.error);
       return;
     }
     if (tab.groupId !== -1) {
@@ -166,7 +185,7 @@ async function closeTabs() {
   await chrome.tabs.remove(tabs.map(t => t.id));
 }
 
-// Recent tabs, Arc-style: ⌃Tab walks through tabs in every window, most recently used first, for as
+// Recent tabs: ⌃Tab walks through the current window's tabs, most recently used first, for as
 // long as Control is held; letting go of Control ends the walk, so the next ⌃Tab goes back to the tab
 // you came from. Chrome won't give extensions the Tab key or tell them when Control is released, so
 // the helper's event tap (helper/Tap.swift) sends:
@@ -178,9 +197,10 @@ async function closeTabs() {
 // A → B → C, release, ⌃Tab goes back to A, not B. Tabs we haven't seen yet fall back to lastAccessed.
 let walk = null; // { list, i, visited }
 
-async function mruList() {
+// All tabs, or one window's; ⌃Tab walks the window you're in.
+async function mruList(windowId) {
   const { mru = [] } = await chrome.storage.session.get('mru');
-  const tabs = await chrome.tabs.query({});
+  const tabs = await chrome.tabs.query(windowId === undefined ? {} : { windowId });
   const known = mru.filter(id => tabs.some(t => t.id === id));
   const rest = tabs.filter(t => !known.includes(t.id)).sort((a, b) => b.lastAccessed - a.lastAccessed);
   return [...known, ...rest.map(t => t.id)];
@@ -206,7 +226,8 @@ function recent(step, fresh) {
   return run(async () => {
     if (fresh || !walk) {
       await endWalk();
-      walk = { list: await mruList(), i: 0, visited: new Set() };
+      const front = await chrome.windows.getLastFocused().catch(() => null);
+      walk = { list: await mruList(front?.id), i: 0, visited: new Set() };
     }
     walk.i = (walk.i + step + walk.list.length) % walk.list.length;
     const id = walk.list[walk.i];
@@ -242,12 +263,12 @@ chrome.windows.onFocusChanged.addListener(async windowId => {
   if (tab) activated(tab.id);
 });
 
-importScripts('little-arc.js', 'player.js', 'helper.js');
+importScripts('mini-browser.js', 'player.js', 'helper.js');
 
 chrome.action.onClicked.addListener(reset);
 
 chrome.commands.onCommand.addListener((command, tab) => {
-  if (command.startsWith('little-')) return littleCommand(command);
+  if (command.startsWith('mini-')) return miniCommand(command);
   if (command === 'recent-next') return recent(1, true);
   if (command === 'recent-continue') return recent(1, false);
   if (command === 'recent-prev') return recent(-1, false);

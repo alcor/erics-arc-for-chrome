@@ -1,10 +1,11 @@
 // The helper app (helper/): one native messaging port, opened here and kept open. The helper pings it
 // every 20 seconds so this service worker isn't stopped for being idle. Over it go, out: the recently
 // used tab list with favicons for the ⌃Tab switcher, a thumbnail of a tab whenever it's been in front,
-// and the mini player's state; in: the tab the switcher picked, a link from another app to open as a
-// Little Arc, and mini player button presses. Without the helper (not installed, or not running yet)
+// the mini browser windows for the helper's bar and peek shade, and the mini player's state; in: the tab
+// the switcher picked, a link from another app to open as a mini browser, the bar's actions, a scroll
+// seen by the tap, an ⌥⌘-click seen by the tap, and mini player button presses. Without the helper (not installed, or not running yet)
 // nothing here matters: ⌃Tab still arrives as the recent-* commands and links still arrive as tabs.
-const HELPER = 'erics_arc_helper';
+const HELPER = 'monochrome_helper';
 const MRU_SENT = 12;
 const THUMB_WIDTH = 480, THUMB_MIN_MS = 1000, THUMB_SETTLE_MS = 400;
 
@@ -37,15 +38,61 @@ async function helperHello() {
     await chrome.storage.session.set({ session });
   }
   helperSend({ hello: { session } });
+  helperSend({ shortcuts: Object.fromEntries((await chrome.commands.getAll()).map(c => [c.name, c.shortcut])) });
   playerResend();
   helperMruSoon();
+  helperMinisSoon();
 }
 
 function helperMessage(msg) {
   if (msg.activate) helperActivate(msg.activate);
-  else if (msg.open) openLittle({ url: msg.open });
+  else if (msg.open) openMiniBrowser({ url: msg.open });
   else if (msg.player) playerAction(msg.player);
+  else if (msg.mini) miniFromHelper(msg.mini).catch(console.error);
+  else if (msg.miniNew) openMiniBrowser();
+  else if (msg.scrolled) helperThumbFront();
+  else if (msg.miniNext) miniNextUntil = Date.now() + 1500;
 }
+
+// The helper's mini browser bar: open in Chrome, move to a window or group, go to an address, or close
+// a peek (a click on its shade).
+async function miniFromHelper({ window, action, to, text }) {
+  if (action === 'closePeekBrowser') return chrome.windows.remove(window).catch(() => {});
+  const [tab] = await chrome.tabs.query({ windowId: window, active: true });
+  if (!tab) return;
+  if (action === 'open') await moveToMain(tab.id);
+  else if (action === 'move') await moveToMain(tab.id, to);
+  else if (action === 'go') await miniGo(tab.id, text);
+}
+
+// mini browser windows: where they are and what's in them, which of them are peek browsers and over which
+// window, and where they can be moved to, for the helper's bar and shade.
+let minisTimer = null;
+function helperMinisSoon() {
+  if (!helper || minisTimer) return;
+  minisTimer = setTimeout(() => { minisTimer = null; helperMinis().catch(console.error); }, 50);
+}
+
+async function helperMinis() {
+  const { mini, peek } = await miniState();
+  const windows = await chrome.windows.getAll({ populate: true });
+  const bounds = w => ({ left: w.left, top: w.top, width: w.width, height: w.height });
+  const minis = [];
+  for (const w of windows) {
+    if (!(w.id in mini)) continue;
+    const tab = w.tabs.find(t => t.active);
+    const over = peek[w.id] && await chrome.tabs.get(peek[w.id].tabId).then(t => chrome.windows.get(t.windowId)).catch(() => null);
+    minis.push({ id: w.id, ...bounds(w), url: tab?.url || '', title: tab?.title || '', over: over ? bounds(over) : null });
+  }
+  helperSend({ minis, targets: await miniTargets() });
+}
+chrome.windows.onCreated.addListener(helperMinisSoon);
+chrome.windows.onRemoved.addListener(helperMinisSoon);
+chrome.windows.onBoundsChanged.addListener(helperMinisSoon);
+chrome.windows.onFocusChanged.addListener(helperMinisSoon);
+chrome.tabGroups.onCreated.addListener(helperMinisSoon);
+chrome.tabGroups.onUpdated.addListener(helperMinisSoon);
+chrome.tabGroups.onRemoved.addListener(helperMinisSoon);
 
 function helperActivate(tabId) {
   return run(async () => {
@@ -55,7 +102,8 @@ function helperActivate(tabId) {
   });
 }
 
-// The list: most recently used first, as mruList() orders it, with favicons as data: URLs.
+// The list: most recently used first, as mruList() orders it, every window's tabs with their window id
+// and which window is in front, so the switcher can keep to that window; favicons as data: URLs.
 let mruTimer = null;
 function helperMruSoon() {
   if (!helper || mruTimer) return;
@@ -66,7 +114,10 @@ async function helperMru() {
   const ids = (await mruList()).slice(0, MRU_SENT);
   const tabs = (await Promise.all(ids.map(id => chrome.tabs.get(id).catch(() => null)))).filter(Boolean);
   const mru = await Promise.all(tabs.map(async t => ({ id: t.id, windowId: t.windowId, title: t.title || t.url, favicon: await favicon(t.url) })));
-  helperSend({ mru });
+  // This profile's front window, by id and by bounds: the helper has one connection per profile and
+  // matches the bounds against the window in front on screen to know whose tabs ⌃Tab walks.
+  const front = await chrome.windows.getLastFocused().catch(() => null);
+  helperSend({ mru, window: front?.id ?? -1, front: front && { left: front.left, top: front.top, width: front.width, height: front.height } });
 }
 
 const favicons = new Map();
@@ -91,6 +142,7 @@ function dataUrl(blob) {
 
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if ('title' in change || 'favIconUrl' in change) helperMruSoon();
+  if ('title' in change || 'url' in change) helperMinisSoon();
   if (change.status === 'complete') helperThumbSoon(tabId);
 });
 chrome.tabs.onRemoved.addListener(tabId => {
@@ -100,16 +152,20 @@ chrome.tabs.onRemoved.addListener(tabId => {
 chrome.tabs.onActivated.addListener(({ tabId }) => helperThumbSoon(tabId, THUMB_SETTLE_MS));
 chrome.windows.onFocusChanged.addListener(async windowId => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  helperMruSoon(); // the list carries which window is in front
   const [tab] = await chrome.tabs.query({ active: true, windowId });
   if (tab) helperThumbSoon(tab.id);
 });
-chrome.runtime.onMessage.addListener((msg, sender) => {
-  if (msg.scrolled && sender.tab) helperThumbSoon(sender.tab.id);
-});
+// A scroll in Chrome, seen by the helper's tap: the tab in front has changed its look.
+async function helperThumbFront() {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  if (tab) helperThumbSoon(tab.id);
+}
 
 // Thumbnails. Chrome can only capture the tab that's in front, so each tab's picture is from the last
-// time it was: taken shortly after it's activated, when a page finishes loading, and after a scroll,
-// at most once a second per tab, scaled down here before it leaves the worker.
+// time it was: taken shortly after it's activated, when a page finishes loading, and after a scroll
+// (the helper's tap reports those), at most once a second per tab, scaled down here before it leaves
+// the worker.
 const thumbAt = new Map(), thumbTimers = new Map();
 function helperThumbSoon(tabId, after = 0) {
   if (!helper) return;

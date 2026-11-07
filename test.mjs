@@ -243,64 +243,66 @@ assert.equal(await active(), tabA);
 await close(bg);
 console.log('background tab is next for ctrl+tab: ok');
 
-// Little Arc.
-const littleWindows = () => sw.evaluate(async () => {
-  const { little = {} } = await chrome.storage.session.get('little');
+// mini browser.
+const miniBrowsers = () => sw.evaluate(async () => {
+  const { mini = {} } = await chrome.storage.session.get('mini');
   const wins = await chrome.windows.getAll({ populate: true });
-  return wins.filter(w => w.id in little).map(w => ({ id: w.id, type: w.type, urls: w.tabs.map(t => t.pendingUrl || t.url) }));
+  return wins.filter(w => w.id in mini).map(w => ({ id: w.id, type: w.type, urls: w.tabs.map(t => t.pendingUrl || t.url) }));
 });
 
-// ⌥⌘N: blank Little Arc with a search box; typing a URL goes there and the bar shows up.
-await sw.evaluate(() => littleCommand('little-new'));
-let [lw] = await littleWindows();
+// ⌥⌘N: blank mini browser with a search box; typing a URL goes there and the bar shows up.
+await sw.evaluate(() => miniCommand('mini-new'));
+let [lw] = await miniBrowsers();
 assert.equal(lw.type, 'popup');
-assert.match(lw.urls[0], /little\.html$/);
+assert.match(lw.urls[0], /mini-browser\.html$/);
 const box = await pageFor(lw.urls[0]);
-await box.fill('input', `${base}/little-typed`);
+await box.fill('input', `${base}/mini-typed`);
 await box.press('input', 'Enter');
-const typed = await pageFor(`${base}/little-typed`);
-await typed.waitForSelector('#erics-little-arc-bar', { state: 'attached' });
-console.log('little arc: new, type URL, bar shows: ok');
+const typed = await pageFor(`${base}/mini-typed`);
+await typed.waitForSelector('#monochrome-mini-bar', { state: 'attached' });
+console.log('mini browser: new, type URL, bar shows: ok');
 
 // ⌘L opens the address field with the URL selected; typing a new one and Enter goes there.
 await typed.keyboard.press('Meta+l');
-assert.equal(await typed.evaluate(() => getSelection().toString()), `${base}/little-typed`); // ready to ⌘C
-await typed.keyboard.type(`${base}/little-cmd-l`);
+assert.equal(await typed.evaluate(() => getSelection().toString()), `${base}/mini-typed`); // ready to ⌘C
+await typed.keyboard.type(`${base}/mini-cmd-l`);
 await typed.keyboard.press('Enter');
-await pageFor(`${base}/little-cmd-l`);
-console.log('little arc: cmd+L address field: ok');
+await pageFor(`${base}/mini-cmd-l`);
+console.log('mini browser: cmd+L address field: ok');
 
-// ⌘O: moves the page into the main window as a normal tab; the Little Arc goes away.
-const littleTab = await sw.evaluate(async id => (await chrome.tabs.query({ windowId: id }))[0].id, lw.id);
-await sw.evaluate(id => moveToMain(id), littleTab);
+// ⌘O: moves the page into the main window as a normal tab; the mini browser goes away.
+const miniTab = await sw.evaluate(async id => (await chrome.tabs.query({ windowId: id }))[0].id, lw.id);
+await sw.evaluate(id => moveToMain(id), miniTab);
 await sleep(300);
-assert.deepEqual(await littleWindows(), []);
-assert.equal(await sw.evaluate(async id => (await chrome.windows.get((await chrome.tabs.get(id)).windowId)).type, littleTab), 'normal');
-assert.equal(await indexOf(littleTab), (await lastLockedIndex()) + 1);
-console.log('little arc: open in Chrome, lands under CoreCore: ok');
+assert.deepEqual(await miniBrowsers(), []);
+assert.equal(await sw.evaluate(async id => (await chrome.windows.get((await chrome.tabs.get(id)).windowId)).type, miniTab), 'normal');
+assert.equal(await indexOf(miniTab), (await lastLockedIndex()) + 1);
+console.log('mini browser: open in Chrome, lands under CoreCore: ok');
 
-// ⌥⌘-click a link opens it in a Little Arc.
+// ⌥⌘-click: the helper's tap turns it into a ⌘-click and says a mini browser is coming; the background
+// tab Chrome then makes becomes one.
 await go(await open('/with-link'), '/with-link');
 const linkPage = await pageFor(`${base}/with-link`);
 await linkPage.evaluate(url => { document.body.innerHTML = `<a href="${url}">go</a>`; }, `${base}/clicked`);
-await linkPage.click('a', { modifiers: ['Alt', 'Meta'] });
+await sw.evaluate(() => { miniNextUntil = Date.now() + 1500; });
+await linkPage.click('a', { modifiers: ['Meta'] });
 await sleep(500);
-[lw] = await littleWindows();
+[lw] = await miniBrowsers();
 assert.deepEqual(lw.urls, [`${base}/clicked`]);
 assert.equal(linkPage.url(), `${base}/with-link`);
-console.log('little arc: alt-cmd-click: ok');
+console.log('mini browser: alt-cmd-click via the helper: ok');
 
-// Peek: a link from a locked tab that opens a new tab (target=_blank) becomes a Little Arc over the
+// peek: a link from a locked tab that opens a new tab (target=_blank) becomes a mini browser over the
 // window, the locked page dimmed behind it; another window taking focus closes it and undims the page.
-// The content script catches the click, so the page opens in the Peek directly: its tab has no opener.
+// The content script catches the click, so the page opens in the peek directly: its tab has no opener.
 const pinnedPage = await pageFor(`${base}/x`);
 await pinnedPage.bringToFront();
-const peekWindow = async url => (await littleWindows()).find(w => w.urls[0] === `${base}${url}`);
-const dimmed = () => pinnedPage.evaluate(() => !!document.getElementById('erics-little-arc-dim'));
+const peekWindow = async url => (await miniBrowsers()).find(w => w.urls[0] === `${base}${url}`);
+const dimmed = () => pinnedPage.evaluate(() => !!document.getElementById('monochrome-peek-dim'));
 const waitFor = async check => { for (let i = 0; i < 30 && !(await check()); i++) await sleep(100); return check(); };
 const openerOf = async url => sw.evaluate(async url => (await chrome.tabs.query({ url }))[0]?.openerTabId, `${base}${url}`);
 const mainWindow = await sw.evaluate(async id => (await chrome.tabs.get(id)).windowId, a2);
-const focusMain = async () => { await sw.evaluate(id => run(() => littleFocused(id)), mainWindow); await settle(); };
+const focusMain = async () => { await sw.evaluate(id => run(() => miniFocused(id)), mainWindow); await settle(); };
 
 await pinnedPage.evaluate(url => { document.body.innerHTML = `<a href="${url}" target="_blank">go</a>`; }, `${base}/peeked`);
 await pinnedPage.click('a');
@@ -312,23 +314,23 @@ assert.ok(await waitFor(dimmed));
 await focusMain();
 assert.equal(await peekWindow('/peeked'), undefined);
 assert.equal(await dimmed(), false);
-console.log('little arc: peek from a locked tab, closed by focus elsewhere: ok');
+console.log('mini browser: peek from a locked tab, closed by focus elsewhere: ok');
 
 // window.open from the locked page's own script is caught the same way and returns null.
 assert.equal(await pinnedPage.evaluate(url => window.open(url) === null, `${base}/peek-opened`), true);
 assert.ok(await waitFor(() => peekWindow('/peek-opened')));
 assert.equal(await openerOf('/peek-opened'), undefined);
 await focusMain();
-console.log('little arc: peek from window.open: ok');
+console.log('mini browser: peek from window.open: ok');
 
-// A new tab the content script didn't catch (here: made with an opener directly) still becomes a Peek,
+// A new tab the content script didn't catch (here: made with an opener directly) still becomes a peek,
 // moved out of the main window.
 const fallback = await sw.evaluate(async ([url, opener, windowId]) => (await chrome.tabs.create({ url, openerTabId: opener, windowId, active: true })).id, [`${base}/peek-fallback`, a2, mainWindow]);
 assert.ok(await waitFor(() => peekWindow('/peek-fallback')));
 assert.equal(await sw.evaluate(async id => (await chrome.tabs.query({ windowId: id }))[0].id, (await peekWindow('/peek-fallback')).id), fallback);
 await focusMain();
-assert.deepEqual((await littleWindows()).filter(w => w.urls[0].startsWith(`${base}/peek`)), []);
-console.log('little arc: peek fallback for a tab Chrome already opened: ok');
+assert.deepEqual((await miniBrowsers()).filter(w => w.urls[0].startsWith(`${base}/peek`)), []);
+console.log('mini browser: peek fallback for a tab Chrome already opened: ok');
 
 // An unlocked tab's new-tab links are left to Chrome.
 await sw.evaluate(id => chrome.tabs.update(id, { pinned: false }), a2);
@@ -340,31 +342,31 @@ assert.equal(await peekWindow('/not-peeked'), undefined);
 assert.equal(await openerOf('/not-peeked'), a2);
 await sw.evaluate(id => chrome.tabs.update(id, { pinned: true }), a2);
 await settle();
-console.log('little arc: no peek from an unpinned tab: ok');
+console.log('mini browser: no peek from an unpinned tab: ok');
 
-// A page that finished loading before it moved into a Little Arc still gets the bar.
+// A page that finished loading before it moved into a mini browser still gets the bar.
 const loaded = await open('/already-loaded');
 await sleep(300);
-await sw.evaluate(id => openLittle({ tabId: id }), loaded);
-await (await pageFor(`${base}/already-loaded`)).waitForSelector('#erics-little-arc-bar', { state: 'attached', timeout: 3000 });
+await sw.evaluate(id => openMiniBrowser({ tabId: id }), loaded);
+await (await pageFor(`${base}/already-loaded`)).waitForSelector('#monochrome-mini-bar', { state: 'attached', timeout: 3000 });
 await sw.evaluate(id => chrome.tabs.remove(id), loaded);
-console.log('little arc: bar on an already-loaded page: ok');
+console.log('mini browser: bar on an already-loaded page: ok');
 
 // Left alone for 12 hours, it closes.
-await sw.evaluate(async () => { await chrome.storage.session.set({ focused: -1 }); await archiveLittle(Date.now() + 13 * 3600e3); });
+await sw.evaluate(async () => { await chrome.storage.session.set({ focused: -1 }); await archiveMiniBrowsers(Date.now() + 13 * 3600e3); });
 await sleep(300);
-assert.deepEqual(await littleWindows(), []);
-console.log('little arc: archived after 12 hours: ok');
+assert.deepEqual(await miniBrowsers(), []);
+console.log('mini browser: archived after 12 hours: ok');
 
-// A link from another app (a second launch handing a URL to the running browser) opens in a Little Arc.
+// A link from another app (a second launch handing a URL to the running browser) opens in a mini browser.
 // Headless Chromium doesn't accept that hand-off, so this one needs HEADFUL=1.
 if (process.env.HEADFUL) {
   spawn(chromium.executablePath(), [`--user-data-dir=${profile}`, `${base}/from-other-app`], { stdio: 'ignore', detached: true }).unref();
-  for (let i = 0; i < 50 && !(await littleWindows()).length; i++) await sleep(100);
-  [lw] = await littleWindows();
+  for (let i = 0; i < 50 && !(await miniBrowsers()).length; i++) await sleep(100);
+  [lw] = await miniBrowsers();
   assert.deepEqual(lw?.urls, [`${base}/from-other-app`]);
-  console.log('little arc: link from another app: ok');
-} else console.log('little arc: link from another app: skipped (run with HEADFUL=1)');
+  console.log('mini browser: link from another app: ok');
+} else console.log('mini browser: link from another app: skipped (run with HEADFUL=1)');
 
 // Mini player: player/install.sh works out the extension's ID from its folder the way Chrome does.
 const idFromPath = p => [...crypto.createHash('sha256').update(p).digest('hex').slice(0, 32)]
@@ -406,7 +408,7 @@ console.log('mini player: track info and buttons: ok');
 const helperBinary = path.join(ext, 'helper/build/Monochrome.app/Contents/MacOS/Monochrome');
 if (fs.existsSync(helperBinary)) {
   const p = spawn(helperBinary, ['--host'], { stdio: ['pipe', 'ignore', 'inherit'],
-    env: { ...process.env, ARC_HELPER_SOCKET: path.join(profile, 'no.sock'), ARC_HELPER_NO_LAUNCH: '1' } });
+    env: { ...process.env, MONOCHROME_SOCKET: path.join(profile, 'no.sock'), MONOCHROME_NO_LAUNCH: '1' } });
   const body = Buffer.from(JSON.stringify({ mru: [] }));
   const header = Buffer.alloc(4);
   header.writeUInt32LE(body.length);
